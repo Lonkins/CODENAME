@@ -105,6 +105,25 @@ struct CoreSessionTests {
     #expect(session.drainAudioSamples().count == 735 * 2)
   }
 
+  @Test func saveRAMSnapshotsAndRestores() throws {
+    let session = try makeSession()
+    defer { session.shutdown() }
+    try session.loadGame(path: nil)
+
+    session.run(frames: 3)
+    let snapshot = try #require(session.saveRAMSnapshot())
+    #expect(snapshot.count == 32)
+    #expect(snapshot[0] == 3)
+
+    session.run(frames: 2)
+    #expect(session.saveRAMSnapshot()?[0] == 5)
+
+    #expect(session.restoreSaveRAM(snapshot))
+    #expect(session.saveRAMSnapshot()?[0] == 3)
+
+    #expect(!session.restoreSaveRAM([1, 2, 3]))
+  }
+
   @Test func rejectsHardwareRenderCores() throws {
     setenv("TEST_CORE_REQUEST_HW", "1", 1)
     defer { unsetenv("TEST_CORE_REQUEST_HW") }

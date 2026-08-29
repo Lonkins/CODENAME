@@ -7,6 +7,7 @@
 #define FRAME_W 320
 #define FRAME_H 240
 #define STATE_SIZE 16
+#define SRAM_SIZE 32
 
 static retro_environment_t env_cb;
 static retro_video_refresh_t video_cb;
@@ -17,6 +18,7 @@ static retro_input_state_t input_state_cb;
 
 static uint16_t framebuffer[FRAME_W * FRAME_H];
 static uint8_t state[STATE_SIZE];
+static uint8_t sram[SRAM_SIZE];
 static unsigned frame_count;
 
 RETRO_API unsigned retro_api_version(void) { return RETRO_API_VERSION; }
@@ -75,6 +77,7 @@ RETRO_API void retro_run(void) {
   if (input_poll_cb) input_poll_cb();
   frame_count++;
   for (unsigned i = 0; i < FRAME_W * FRAME_H; i++) framebuffer[i] = (uint16_t)(frame_count & 0xffff);
+  sram[0] = (uint8_t)frame_count;  // lets hosts verify save-RAM snapshots change
   // Pixel 1 echoes the B button so hosts can verify input through the ABI.
   if (input_state_cb)
     framebuffer[1] = (uint16_t)input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B);
@@ -101,8 +104,12 @@ RETRO_API bool retro_unserialize(const void *data, size_t size) {
   return true;
 }
 
-RETRO_API void *retro_get_memory_data(unsigned id) { (void)id; return NULL; }
-RETRO_API size_t retro_get_memory_size(unsigned id) { (void)id; return 0; }
+RETRO_API void *retro_get_memory_data(unsigned id) {
+  return id == RETRO_MEMORY_SAVE_RAM ? sram : NULL;
+}
+RETRO_API size_t retro_get_memory_size(unsigned id) {
+  return id == RETRO_MEMORY_SAVE_RAM ? SRAM_SIZE : 0;
+}
 
 // Unused-by-tests entry points kept for ABI completeness.
 RETRO_API void retro_set_controller_port_device(unsigned port, unsigned device) {

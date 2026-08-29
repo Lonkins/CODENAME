@@ -24,6 +24,10 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
   private var displayLink: CAMetalDisplayLink?
   private var activity: NSObjectProtocol?
   private var coreThreadShouldRun = true  // flipped on the core thread itself, in teardown
+  private let saveStore = SaveRAMStore()
+  private var saveIdentity: (core: String, content: String)?
+  private var lastFlushedSaveRAM: [UInt8]?
+  private var framesSinceFlush = 0
 
   init(layer: CAMetalLayer, coreURL: URL, contentPath: String?, displayRefresh: Double) {
     self.layer = layer
@@ -68,6 +72,7 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     displayLink = nil
     audioOutput?.stop()
     audioOutput = nil
+    flushSaveRAM()
     session?.shutdown()
     session = nil
     presenter = nil
@@ -75,6 +80,18 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     coreThreadShouldRun = false
     NSLog("session stopped after %d vblank callbacks", vblankCount)
     CFRunLoopStop(CFRunLoopGetCurrent())
+  }
+
+  private func flushSaveRAM() {
+    guard let saveIdentity, let snapshot = session?.saveRAMSnapshot(),
+      snapshot != lastFlushedSaveRAM
+    else { return }
+    do {
+      try saveStore.save(snapshot, coreName: saveIdentity.core, contentName: saveIdentity.content)
+      lastFlushedSaveRAM = snapshot
+    } catch {
+      NSLog("save RAM flush failed: \(error)")
+    }
   }
 
   private func setUpOnCoreThread() {
@@ -93,6 +110,20 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
       return
     }
     presenter = MetalPresenter()
+
+    if let contentPath {
+      let identity = (
+        core: coreURL.deletingPathExtension().lastPathComponent,
+        content: URL(fileURLWithPath: contentPath).deletingPathExtension().lastPathComponent
+      )
+      saveIdentity = identity
+      if let existing = saveStore.load(coreName: identity.core, contentName: identity.content),
+        session?.restoreSaveRAM(existing) == true
+      {
+        lastFlushedSaveRAM = existing
+        NSLog("save RAM restored (%d bytes)", existing.count)
+      }
+    }
 
     if let sampleRate = session?.avInfo?.audioSampleRate, sampleRate > 0 {
       // ~93ms of stereo at 44.1k; rate control holds it near half full.
@@ -139,6 +170,12 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
       if let audioRing, let audioOutput {
         _ = audioRing.write(samples)  // overruns drop the newest; rate control prevents them
         audioOutput.updateRateControl()
+      }
+
+      framesSinceFlush += 1
+      if framesSinceFlush >= 600 {  // ~10s: cheap insurance against hard exits
+        framesSinceFlush = 0
+        flushSaveRAM()
       }
 
       paceFrameCount += 1
