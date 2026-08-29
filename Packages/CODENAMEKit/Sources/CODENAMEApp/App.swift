@@ -144,9 +144,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
   }
 
-  func startGame(coreURL: URL, contentPath: String?, contentAccess: ScopedAccess? = nil) {
+  private var globalDisplaySettings: DisplaySettings {
+    DisplaySettings(
+      integerScale: UserDefaults.standard.object(forKey: "integerScale") as? Bool ?? true)
+  }
+
+  func startGame(
+    coreURL: URL, contentPath: String?, contentAccess: ScopedAccess? = nil,
+    displayOverrides: DisplaySettings? = nil
+  ) {
     stopGame()
     self.contentAccess = contentAccess
+    let resolved = DisplaySettings.resolve(
+      global: globalDisplaySettings, override: displayOverrides)
 
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 960, height: 540),
@@ -166,7 +176,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     let refresh = Double(window.screen?.maximumFramesPerSecond ?? 60)
     let loop = CoreDisplayLoop(
       layer: gameView.metalLayer, coreURL: coreURL,
-      contentPath: contentPath, displayRefresh: refresh)
+      contentPath: contentPath, displayRefresh: refresh,
+      displaySettings: LiveDisplaySettings(resolved))
     let input = InputController(inputState: loop.inputState, mapping: loadMapping(forCore: coreURL))
     input.start()
 
@@ -273,7 +284,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         coreID: entry.coreID, bookmark: nil)
       startGameRouted(
         contentURL: contentURL, coreID: entry.coreID,
-        contentAccess: ScopedAccess(url: resolved.url))
+        contentAccess: ScopedAccess(url: resolved.url),
+        displayOverrides: entry.displayOverrides)
     } else {
       let recentsStyle = NSMenuItem()
       recentsStyle.representedObject = entry
@@ -281,13 +293,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
   }
 
-  private func startGameRouted(contentURL: URL, coreID: String, contentAccess: ScopedAccess) {
+  private func startGameRouted(
+    contentURL: URL, coreID: String, contentAccess: ScopedAccess,
+    displayOverrides: DisplaySettings? = nil
+  ) {
     guard
       let core = catalog.entries.first(where: {
         $0.url.deletingPathExtension().lastPathComponent == coreID
       }) ?? catalog.core(forExtension: contentURL.pathExtension)
     else { return }
-    startGame(coreURL: core.url, contentPath: contentURL.path, contentAccess: contentAccess)
+    startGame(
+      coreURL: core.url, contentPath: contentURL.path, contentAccess: contentAccess,
+      displayOverrides: displayOverrides)
   }
 
   @objc private func showSettingsAction(_ sender: Any?) {
@@ -299,7 +316,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
       contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
     window.title = "Settings"
     window.isReleasedWhenClosed = false
-    window.contentView = NSHostingView(rootView: SettingsView(licences: loadCoreLicences()))
+    window.contentView = NSHostingView(
+      rootView: SettingsView(
+        licences: loadCoreLicences(),
+        onIntegerScaleChange: { [weak self] value in
+          self?.displayLoop?.displaySettings.integerScale = value
+        }))
     window.center()
     window.makeKeyAndOrderFront(nil)
     settingsWindow = window
