@@ -31,8 +31,9 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 # Hardened runtime only with a real identity: library validation requires a
 # shared Team ID, which ad-hoc signatures don't have (see ADR 0001).
-RUNTIME_OPTS=()
-if [ "$IDENTITY" != "-" ]; then RUNTIME_OPTS=(--options runtime); fi
+# Plain string, expanded unquoted: empty arrays trip `set -u` on bash 3.2.
+RUNTIME_OPTS=""
+if [ "$IDENTITY" != "-" ]; then RUNTIME_OPTS="--options runtime"; fi
 
 # Sign inside-out: Sparkle's nested services, the framework, then the app.
 FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
@@ -41,11 +42,11 @@ for NESTED in \
   "$FRAMEWORK/Versions/B/XPCServices/Installer.xpc" \
   "$FRAMEWORK/Versions/B/Autoupdate" \
   "$FRAMEWORK/Versions/B/Updater.app"; do
-  [ -e "$NESTED" ] && codesign --force "${RUNTIME_OPTS[@]}" --preserve-metadata=entitlements \
+  [ -e "$NESTED" ] && codesign --force $RUNTIME_OPTS --preserve-metadata=entitlements \
     --sign "$IDENTITY" "$NESTED"
 done
-codesign --force "${RUNTIME_OPTS[@]}" --sign "$IDENTITY" "$FRAMEWORK"
-codesign --force "${RUNTIME_OPTS[@]}" \
+codesign --force $RUNTIME_OPTS --sign "$IDENTITY" "$FRAMEWORK"
+codesign --force $RUNTIME_OPTS \
   --entitlements App/CODENAME.entitlements \
   --sign "$IDENTITY" "$APP"
 codesign --verify --deep --verbose=2 "$APP"
