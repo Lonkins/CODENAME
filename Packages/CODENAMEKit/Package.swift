@@ -12,7 +12,8 @@ let package = Package(
     .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0")
   ],
   targets: [
-    .target(name: "CODENAMEKit"),
+    .target(name: "CLibretro"),
+    .target(name: "CODENAMEKit", dependencies: ["CLibretro"]),
     .executableTarget(
       name: "CODENAMEApp",
       dependencies: [.product(name: "Sparkle", package: "Sparkle")],
