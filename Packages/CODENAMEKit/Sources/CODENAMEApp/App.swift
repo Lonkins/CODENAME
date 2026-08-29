@@ -5,6 +5,7 @@ import Sparkle
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
   private var window: NSWindow?
+  private var displayLoop: CoreDisplayLoop?
   private let updaterController = SPUStandardUpdaterController(
     startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
 
@@ -26,10 +27,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       defer: false
     )
     window.title = "CODENAME"
+    let gameView = GameView(frame: window.contentLayoutRect)
+    gameView.autoresizingMask = [.width, .height]
+    gameView.metalLayer.drawableSize = CGSize(width: 1920, height: 1080)
+    window.contentView = gameView
     window.center()
     window.makeKeyAndOrderFront(nil)
     self.window = window
     NSApp.activate()
+
+    // Development core from the app bundle; real cores arrive per ADR 0001.
+    if let plugins = Bundle.main.builtInPlugInsURL {
+      let core = plugins.appendingPathComponent("libTestCore.dylib")
+      if FileManager.default.fileExists(atPath: core.path) {
+        let loop = CoreDisplayLoop(layer: gameView.metalLayer, coreURL: core)
+        displayLoop = loop
+        loop.start()
+      }
+    }
   }
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

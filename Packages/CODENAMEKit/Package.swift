@@ -18,7 +18,7 @@ let package = Package(
     .target(name: "CODENAMEKit", dependencies: ["CLibretro"]),
     .executableTarget(
       name: "CODENAMEApp",
-      dependencies: [.product(name: "Sparkle", package: "Sparkle")],
+      dependencies: ["CODENAMEKit", .product(name: "Sparkle", package: "Sparkle")],
       linkerSettings: [
         // Sparkle.framework is embedded by Scripts/make-app.sh.
         .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])
