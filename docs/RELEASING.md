@@ -8,9 +8,9 @@ git tag vX.Y.Z && git push origin vX.Y.Z
 
 The workflow builds `CODENAME.app` (arm64, sandboxed), signs it with Developer ID, notarizes and staples the app and the `.dmg`, and attaches `CODENAME-X.Y.Z.dmg` + a SHA-256 checksum to a GitHub release. All logic lives in `Scripts/make-release.sh`, which is runnable locally.
 
-## Dry-run mode
+## Dry-run mode (current default)
 
-If the signing secrets below are **absent**, the same tag still produces a release, marked `prerelease`, containing an **ad-hoc signed** dmg: not notarized, not Gatekeeper-clean, useful only to verify the pipeline. Configuring the secrets flips subsequent tags to real releases with no workflow change.
+If the signing secrets below are **absent**, the same tag still produces a release, marked `prerelease`, containing an **ad-hoc signed** dmg: not notarized, not Gatekeeper-clean. **This is the deliberate current mode**: distribution is GitHub Releases with documented manual install (see the README), and paid signing is deferred until the project warrants it. Configuring the secrets flips subsequent tags to real notarized releases with no workflow change.
 
 ## Required Actions secrets
 

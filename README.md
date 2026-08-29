@@ -8,7 +8,25 @@ Swift 6, Metal presentation, macOS 15+. Signed, notarized, sandboxed, and Gateke
 
 Phase 0 (foundations) is in place: CI on arm64 runners, a tag-driven release pipeline (Developer ID signing → notarization → stapled `.dmg`), and a [Sparkle](https://sparkle-project.org) update channel with an EdDSA-signed [appcast](https://lonkins.github.io/CODENAME/appcast.xml).
 
-**There is no emulation yet.** Phase 1 (the libretro core host: video, audio, input, save states) is next. Current [releases](../../releases) are unsigned pipeline dry-runs and will not pass Gatekeeper; real signed releases begin once notarization credentials are configured.
+Phase 1 (the libretro core host: video, audio, input, save states) is implemented and CI-verified against real cores; full emulation verification against user-supplied content is in progress.
+
+## Install
+
+Releases are distributed from [GitHub Releases](../../releases) as a `.dmg` with a SHA-256 checksum.
+
+Current builds are **unsigned** (signing and notarization are deferred until the project matures — the release pipeline already supports them). macOS will refuse to open an unsigned downloaded app, so after copying `CODENAME.app` to `/Applications`:
+
+```
+xattr -cr /Applications/CODENAME.app
+```
+
+Verify your download first:
+
+```
+shasum -a 256 -c CODENAME-<version>.dmg.sha256
+```
+
+Only run this against releases you downloaded from this repository. If you prefer not to bypass Gatekeeper, build from source below — locally built apps carry no quarantine.
 
 ## What this is
 
