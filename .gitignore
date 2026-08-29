@@ -12,6 +12,13 @@ DerivedData/
 xcuserdata/
 *.xcuserstate
 
+# User-supplied content (BIOS/firmware/ROMs) — never committed
+*.bin
+*.rom
+*.7z
+/System/
+/BIOS/
+
 # Signing material — never committed
 *.p12
 *.mobileprovision
