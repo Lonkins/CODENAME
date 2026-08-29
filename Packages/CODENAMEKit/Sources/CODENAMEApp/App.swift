@@ -46,6 +46,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
       startGame(coreURL: bundled, contentPath: nil)
     }
 
+    // Dev-only: headless fullscreen proof — toggle, then log geometry.
+    if ProcessInfo.processInfo.environment["CODENAME_FULLSCREEN_TEST"] != nil {
+      DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+        self?.gameWindow?.toggleFullScreen(nil)
+      }
+      DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+        guard let window = self?.gameWindow, let view = window.contentView as? GameView else {
+          return
+        }
+        NSLog(
+          "fullscreen test: frame %.0fx%.0f drawable %.0fx%.0f styleMask fullScreen=%d",
+          window.frame.width, window.frame.height,
+          view.metalLayer.drawableSize.width, view.metalLayer.drawableSize.height,
+          window.styleMask.contains(.fullScreen) ? 1 : 0)
+      }
+    }
+
     // Dev-only: exercise the stop path without UI automation.
     if let seconds = ProcessInfo.processInfo.environment["CODENAME_AUTOSTOP_SECONDS"]
       .flatMap(Double.init)
@@ -165,6 +182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
       defer: false
     )
     window.title = coreURL.deletingPathExtension().lastPathComponent
+    window.collectionBehavior = [.fullScreenPrimary]
     let gameView = GameView(frame: window.contentLayoutRect)
     gameView.autoresizingMask = [.width, .height]
     window.contentView = gameView
@@ -425,6 +443,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
       load.tag = slot
       gameMenu.addItem(load)
     }
+    gameMenu.addItem(.separator())
+    let fullScreenItem = NSMenuItem(
+      title: "Toggle Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)),
+      keyEquivalent: "f")
+    fullScreenItem.keyEquivalentModifierMask = [.control, .command]
+    gameMenu.addItem(fullScreenItem)
     gameMenu.addItem(.separator())
     let stopItem = NSMenuItem(
       title: "Stop", action: #selector(stopGameAction(_:)), keyEquivalent: "w")
