@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build, test, lint (arm64)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain info
+        run: |
+          uname -m
+          swift --version
+      - name: Build
+        run: swift build --package-path Packages/CODENAMEKit
+      - name: Test
+        run: swift test --package-path Packages/CODENAMEKit
+      - name: Lint
+        run: swift format lint --strict --recursive Packages
