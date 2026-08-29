@@ -75,6 +75,9 @@ RETRO_API void retro_run(void) {
   if (input_poll_cb) input_poll_cb();
   frame_count++;
   for (unsigned i = 0; i < FRAME_W * FRAME_H; i++) framebuffer[i] = (uint16_t)(frame_count & 0xffff);
+  // Pixel 1 echoes the B button so hosts can verify input through the ABI.
+  if (input_state_cb)
+    framebuffer[1] = (uint16_t)input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B);
   if (video_cb) video_cb(framebuffer, FRAME_W, FRAME_H, FRAME_W * sizeof(uint16_t));
   if (audio_batch_cb) {
     static int16_t silence[735 * 2];
