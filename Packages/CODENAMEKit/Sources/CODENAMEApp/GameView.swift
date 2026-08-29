@@ -13,6 +13,7 @@ final class GameView: NSView {
 
   override func makeBackingLayer() -> CALayer {
     let layer = CAMetalLayer()
+    layer.device = MTLCreateSystemDefaultDevice()
     layer.pixelFormat = .bgra8Unorm
     layer.framebufferOnly = false
     return layer
@@ -21,6 +22,12 @@ final class GameView: NSView {
   override init(frame: NSRect) {
     super.init(frame: frame)
     wantsLayer = true
+  }
+
+  override func layout() {
+    super.layout()
+    let scale = window?.backingScaleFactor ?? 2
+    metalLayer.drawableSize = CGSize(width: bounds.width * scale, height: bounds.height * scale)
   }
 
   @available(*, unavailable)

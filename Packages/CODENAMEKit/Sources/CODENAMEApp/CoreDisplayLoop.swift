@@ -10,16 +10,22 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
   let inputState = InputState()
   private let layer: CAMetalLayer
   private let coreURL: URL
+  private let contentPath: String?
+  private let displayRefresh: Double
   private var session: CoreSession?
   private var presenter: MetalPresenter?
   private var audioRing: SPSCRingBuffer?
   private var audioOutput: CoreAudioOutput?
   private var vblanksPerFrame = 1
   private var vblankCount = 0
+  private var paceFrameCount = 0
+  private var paceWindowStart = 0.0
 
-  init(layer: CAMetalLayer, coreURL: URL) {
+  init(layer: CAMetalLayer, coreURL: URL, contentPath: String?, displayRefresh: Double) {
     self.layer = layer
     self.coreURL = coreURL
+    self.contentPath = contentPath
+    self.displayRefresh = displayRefresh
     super.init()
   }
 
@@ -28,6 +34,7 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     let thread = Thread { [self] in
       setUpOnCoreThread()
       RunLoop.current.run()
+      NSLog("core thread run loop exited")
     }
     thread.name = "CODENAME.core"
     thread.qualityOfService = .userInteractive
@@ -47,7 +54,7 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     do {
       let session = try CoreSession(
         coreURL: coreURL, policy: policy, environment: environment, inputState: inputState)
-      try session.loadGame(path: nil)
+      try session.loadGame(path: contentPath)
       self.session = session
     } catch {
       NSLog("core load failed: \(error)")
@@ -69,27 +76,46 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     }
 
     if let fps = session?.avInfo?.framesPerSecond {
-      let refresh = 60.0  // ponytail: fixed assumption; query the display when pacing polish lands.
-      if case .videoMaster(let vblanks) = FramePacer.mode(coreFPS: fps, displayRefresh: refresh) {
+      let mode = FramePacer.mode(coreFPS: fps, displayRefresh: displayRefresh)
+      if case .videoMaster(let vblanks) = mode {
         vblanksPerFrame = vblanks
       }
+      NSLog(
+        "pacing: core %.4ffps, display %.0fHz, %d vblank(s)/frame",
+        fps, displayRefresh, vblanksPerFrame)
     }
 
     let displayLink = CAMetalDisplayLink(metalLayer: layer)
     displayLink.delegate = self
     displayLink.add(to: .current, forMode: .default)
+    NSLog(
+      "display link armed, drawable %.0fx%.0f",
+      layer.drawableSize.width, layer.drawableSize.height)
   }
 
   func metalDisplayLink(_ link: CAMetalDisplayLink, needsUpdate update: CAMetalDisplayLink.Update) {
     guard let session, let presenter else { return }
 
     vblankCount += 1
+    if vblankCount == 1 {
+      NSLog("display link first callback")
+    }
     if vblankCount % vblanksPerFrame == 0 {
       session.run(frames: 1)
       let samples = session.drainAudioSamples()
       if let audioRing, let audioOutput {
         _ = audioRing.write(samples)  // overruns drop the newest; rate control prevents them
         audioOutput.updateRateControl()
+      }
+
+      paceFrameCount += 1
+      let now = CACurrentMediaTime()
+      if paceWindowStart == 0 { paceWindowStart = now }
+      if now - paceWindowStart >= 5 {
+        let fps = Double(paceFrameCount) / (now - paceWindowStart)
+        NSLog("pace: %.2f core fps, ring %.2f", fps, audioRing?.occupancy ?? -1)
+        paceFrameCount = 0
+        paceWindowStart = now
       }
     }
 
