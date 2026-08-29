@@ -17,15 +17,37 @@ BIN="$(swift build --package-path Packages/CODENAMEKit -c "$CONFIG" --show-bin-p
 file "$BIN" | grep -q "arm64" || { echo "error: binary is not arm64" >&2; exit 1; }
 file "$BIN" | grep -qv "universal" || { echo "error: universal binary produced" >&2; exit 1; }
 
+SPARKLE_FRAMEWORK="Packages/CODENAMEKit/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
+[ -d "$SPARKLE_FRAMEWORK" ] || { echo "error: Sparkle.framework artifact missing" >&2; exit 1; }
+
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks"
 cp "$BIN" "$APP/Contents/MacOS/CODENAME"
+cp -R "$SPARKLE_FRAMEWORK" "$APP/Contents/Frameworks/"
+lipo -thin arm64 "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle" \
+  -output "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle"
 sed -e "s/__VERSION__/$VERSION/g" -e "s/__BUILD__/$BUILD/g" App/Info.plist > "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
-codesign --force --options runtime \
+# Hardened runtime only with a real identity: library validation requires a
+# shared Team ID, which ad-hoc signatures don't have (see ADR 0001).
+RUNTIME_OPTS=()
+if [ "$IDENTITY" != "-" ]; then RUNTIME_OPTS=(--options runtime); fi
+
+# Sign inside-out: Sparkle's nested services, the framework, then the app.
+FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
+for NESTED in \
+  "$FRAMEWORK/Versions/B/XPCServices/Downloader.xpc" \
+  "$FRAMEWORK/Versions/B/XPCServices/Installer.xpc" \
+  "$FRAMEWORK/Versions/B/Autoupdate" \
+  "$FRAMEWORK/Versions/B/Updater.app"; do
+  [ -e "$NESTED" ] && codesign --force "${RUNTIME_OPTS[@]}" --preserve-metadata=entitlements \
+    --sign "$IDENTITY" "$NESTED"
+done
+codesign --force "${RUNTIME_OPTS[@]}" --sign "$IDENTITY" "$FRAMEWORK"
+codesign --force "${RUNTIME_OPTS[@]}" \
   --entitlements App/CODENAME.entitlements \
   --sign "$IDENTITY" "$APP"
-codesign --verify --verbose=2 "$APP"
+codesign --verify --deep --verbose=2 "$APP"
 
 echo "built: $APP (v$VERSION build $BUILD, $CONFIG, identity: $IDENTITY)"
