@@ -130,7 +130,8 @@ public final class CoreSession {
       let data = library.symbols.getMemoryData(UInt32(RETRO_MEMORY_SAVE_RAM))
     else { return false }
     bytes.withUnsafeBytes { source in
-      data.copyMemory(from: source.baseAddress ?? data, byteCount: size)
+      guard let base = source.baseAddress else { return }
+      data.copyMemory(from: base, byteCount: size)
     }
     return true
   }
