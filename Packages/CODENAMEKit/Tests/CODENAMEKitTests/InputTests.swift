@@ -49,6 +49,21 @@ import Testing
     #expect(mapping.button(forPad: "unknown") == nil)
   }
 
+  @Test func detectsConflictingAssignments() {
+    var mapping = ButtonMapping.defaultMapping
+    #expect(mapping.conflicts().isEmpty)
+
+    mapping.pad["buttonB"] = .b  // now both buttonA and buttonB → .b
+    let conflicts = mapping.conflicts()
+    #expect(conflicts[.b]?.sorted() == ["buttonA", "buttonB"])
+    #expect(conflicts.count == 1)
+  }
+
+  @Test func keyboardAndPadDoNotConflictAcrossDomains() {
+    // Keyboard Z and pad buttonA both map to .b by default — intended.
+    #expect(ButtonMapping.defaultMapping.conflicts().isEmpty)
+  }
+
   @Test func roundTripsThroughJSONFile() throws {
     var mapping = ButtonMapping.defaultMapping
     mapping.pad["buttonA"] = .y

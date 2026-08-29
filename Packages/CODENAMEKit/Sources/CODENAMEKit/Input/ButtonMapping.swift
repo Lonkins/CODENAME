@@ -15,6 +15,22 @@ public struct ButtonMapping: Codable, Equatable, Sendable {
     keyboard[String(raw)]
   }
 
+  /// Buttons assigned to more than one physical control *within a domain*
+  /// (pad or keyboard); cross-domain duplication is intentional.
+  public func conflicts() -> [RetroPadButton: [String]] {
+    var result: [RetroPadButton: [String]] = [:]
+    for domain in [pad, keyboard] {
+      var byButton: [RetroPadButton: [String]] = [:]
+      for (control, button) in domain {
+        byButton[button, default: []].append(control)
+      }
+      for (button, controls) in byButton where controls.count > 1 {
+        result[button, default: []].append(contentsOf: controls)
+      }
+    }
+    return result
+  }
+
   /// Nintendo-style pad layout; keyboard uses arrows + Z/X/A/S.
   public static let defaultMapping = ButtonMapping(
     pad: [
