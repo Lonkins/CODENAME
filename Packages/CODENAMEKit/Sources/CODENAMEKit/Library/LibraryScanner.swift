@@ -30,10 +30,9 @@ public enum LibraryScanner {
     var games: [ScannedGame] = []
     for case let url as URL in enumerator {
       guard let values = try? url.resourceValues(forKeys: Set(keys)) else { continue }
+      // The enumerator never follows directory symlinks; skipping the entry
+      // itself is the whole containment rule.
       if values.isSymbolicLink == true {
-        if values.isRegularFile != true {
-          enumerator.skipDescendants()
-        }
         continue
       }
       guard values.isRegularFile == true else { continue }
