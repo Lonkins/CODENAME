@@ -113,6 +113,28 @@ public final class CoreSession {
     }
   }
 
+  /// Copy of the core's save RAM, or nil when the core exposes none.
+  /// Snapshot semantics per ADR 0001 — the live pointer never escapes.
+  public func saveRAMSnapshot() -> [UInt8]? {
+    let size = library.symbols.getMemorySize(UInt32(RETRO_MEMORY_SAVE_RAM))
+    guard size > 0, let data = library.symbols.getMemoryData(UInt32(RETRO_MEMORY_SAVE_RAM)) else {
+      return nil
+    }
+    return [UInt8](UnsafeRawBufferPointer(start: data, count: size))
+  }
+
+  /// Copies persisted save RAM into the core; false on size mismatch or none.
+  public func restoreSaveRAM(_ bytes: [UInt8]) -> Bool {
+    let size = library.symbols.getMemorySize(UInt32(RETRO_MEMORY_SAVE_RAM))
+    guard size == bytes.count, size > 0,
+      let data = library.symbols.getMemoryData(UInt32(RETRO_MEMORY_SAVE_RAM))
+    else { return false }
+    bytes.withUnsafeBytes { source in
+      data.copyMemory(from: source.baseAddress ?? data, byteCount: size)
+    }
+    return true
+  }
+
   /// Returns accumulated samples and clears the buffer (bounds session memory;
   /// the caller feeds them into the audio ring).
   public func drainAudioSamples() -> [Int16] {
