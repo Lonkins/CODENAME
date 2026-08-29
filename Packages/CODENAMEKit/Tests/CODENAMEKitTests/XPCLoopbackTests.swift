@@ -36,7 +36,7 @@ import Testing
   @Test func interfaceAllowlistsIOSurfaceForFrameArgument() {
     let classes = CoreHostWire.interface().classes(
       for: #selector(CoreHostProtocol.roundTripFrame(_:reply:)), argumentIndex: 0, ofReply: false)
-    #expect(classes.contains { $0 == IOSurface.self })
-    #expect(classes.count == 1)
+    let names = classes.map { String(describing: $0) }
+    #expect(names == ["IOSurface"])
   }
 }
