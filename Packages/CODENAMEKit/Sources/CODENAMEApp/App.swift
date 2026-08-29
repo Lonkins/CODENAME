@@ -184,6 +184,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     stopGame()
   }
 
+  @objc private func saveStateAction(_ sender: NSMenuItem) {
+    displayLoop?.requestSaveState(slot: sender.tag)
+  }
+
+  @objc private func loadStateAction(_ sender: NSMenuItem) {
+    displayLoop?.requestLoadState(slot: sender.tag)
+  }
+
   // MARK: - Windows and menu
 
   private func showLibraryWindow() {
@@ -255,6 +263,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     fileMenu.addItem(recentsItem)
 
     let gameMenu = NSMenu(title: "Game")
+    for slot in 1...3 {
+      let save = NSMenuItem(
+        title: "Save State — Slot \(slot)", action: #selector(saveStateAction(_:)),
+        keyEquivalent: slot == 1 ? "s" : "")
+      save.target = self
+      save.tag = slot
+      gameMenu.addItem(save)
+    }
+    gameMenu.addItem(.separator())
+    for slot in 1...3 {
+      let load = NSMenuItem(
+        title: "Load State — Slot \(slot)", action: #selector(loadStateAction(_:)),
+        keyEquivalent: slot == 1 ? "l" : "")
+      load.target = self
+      load.tag = slot
+      gameMenu.addItem(load)
+    }
+    gameMenu.addItem(.separator())
     let stopItem = NSMenuItem(
       title: "Stop", action: #selector(stopGameAction(_:)), keyEquivalent: "w")
     stopItem.target = self
