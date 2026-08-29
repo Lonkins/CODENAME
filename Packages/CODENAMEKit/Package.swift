@@ -8,9 +8,19 @@ let package = Package(
     .library(name: "CODENAMEKit", targets: ["CODENAMEKit"]),
     .executable(name: "CODENAMEApp", targets: ["CODENAMEApp"]),
   ],
+  dependencies: [
+    .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0")
+  ],
   targets: [
     .target(name: "CODENAMEKit"),
-    .executableTarget(name: "CODENAMEApp"),
+    .executableTarget(
+      name: "CODENAMEApp",
+      dependencies: [.product(name: "Sparkle", package: "Sparkle")],
+      linkerSettings: [
+        // Sparkle.framework is embedded by Scripts/make-app.sh.
+        .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])
+      ]
+    ),
     .testTarget(name: "CODENAMEKitTests", dependencies: ["CODENAMEKit"]),
   ]
 )

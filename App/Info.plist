@@ -24,6 +24,14 @@
   <string>15.0</string>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
+  <key>SUFeedURL</key>
+  <string>https://lonkins.github.io/CODENAME/appcast.xml</string>
+  <key>SUPublicEDKey</key>
+  <string>vFATVpj4MGtNQdBaWPEjiVc7RbJW1qgpfgm2N9lqIpg=</string>
+  <key>SUEnableDownloaderService</key>
+  <true/>
+  <key>SUEnableInstallerLauncherService</key>
+  <true/>
   <key>NSHumanReadableCopyright</key>
   <string>GPL-3.0-or-later</string>
 </dict>

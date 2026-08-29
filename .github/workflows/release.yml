@@ -6,6 +6,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
   release:
@@ -13,6 +15,7 @@ jobs:
     runs-on: macos-latest
     env:
       HAVE_SIGNING: ${{ secrets.MACOS_CERT_P12_BASE64 != '' }}
+      HAVE_SPARKLE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -68,6 +71,33 @@ jobs:
               --notes "Dry-run build produced without signing secrets. Ad-hoc signed, not notarized, will not pass Gatekeeper. For pipeline verification only."
           fi
 
+      - name: Generate appcast
+        if: env.HAVE_SPARKLE_KEY == 'true'
+        env:
+          SPARKLE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          printf '%s' "$SPARKLE_KEY" > "$RUNNER_TEMP/sparkle_ed_key"
+          VERSION="${GITHUB_REF_NAME#v}" BUILD="${{ github.run_number }}" \
+            SPARKLE_ED_PRIVATE_KEY_FILE="$RUNNER_TEMP/sparkle_ed_key" ./Scripts/make-appcast.sh
+          rm "$RUNNER_TEMP/sparkle_ed_key"
+
+      - name: Upload Pages artifact
+        if: env.HAVE_SPARKLE_KEY == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/site
+
       - name: Delete keychain
         if: always() && env.HAVE_SIGNING == 'true'
         run: security delete-keychain "$RUNNER_TEMP/release.keychain-db" || true
+
+  publish-appcast:
+    name: Publish appcast to Pages
+    needs: release
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
