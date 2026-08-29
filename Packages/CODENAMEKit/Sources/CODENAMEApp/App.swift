@@ -46,6 +46,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
       startGame(coreURL: bundled, contentPath: nil)
     }
 
+    // Dev-only: launchd-hosted XPC service smoke (ADR 0006 step B).
+    if ProcessInfo.processInfo.environment["CODENAME_XPC_SMOKE"] != nil {
+      let connection = NSXPCConnection(serviceName: "dev.CODENAME.CoreHost")
+      connection.remoteObjectInterface = CoreHostWire.interface()
+      connection.resume()
+      let proxy = connection.remoteObjectProxyWithErrorHandler { error in
+        NSLog("xpc smoke failed: \(error.localizedDescription)")
+      }
+      (proxy as? CoreHostProtocol)?.handshake(version: CoreHostWire.version) { version in
+        NSLog("xpc smoke: helper version %d", version)
+      }
+    }
+
     // Dev-only: headless fullscreen proof — toggle, then log geometry.
     if ProcessInfo.processInfo.environment["CODENAME_FULLSCREEN_TEST"] != nil {
       DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in

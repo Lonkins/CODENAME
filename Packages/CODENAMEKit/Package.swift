@@ -9,6 +9,7 @@ let package = Package(
     .executable(name: "CODENAMEApp", targets: ["CODENAMEApp"]),
     .library(name: "TestCore", type: .dynamic, targets: ["TestCore"]),
     .executable(name: "conformance-runner", targets: ["ConformanceRunner"]),
+    .executable(name: "CoreHostXPC", targets: ["CoreHostXPC"]),
   ],
   dependencies: [
     .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0")
@@ -26,6 +27,7 @@ let package = Package(
       ]
     ),
     .executableTarget(name: "ConformanceRunner", dependencies: ["CODENAMEKit"]),
+    .executableTarget(name: "CoreHostXPC", dependencies: ["CODENAMEKit"]),
     .testTarget(name: "CODENAMEKitTests", dependencies: ["CODENAMEKit"]),
   ]
 )

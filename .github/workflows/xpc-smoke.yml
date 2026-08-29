@@ -1,0 +1,29 @@
+name: XPC Smoke
+
+# Deliberately NOT a required check (ADR 0006): launchd behavior on runners
+# is environmental; this must never be able to block main.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "Scripts/make-app.sh"
+      - "Packages/CODENAMEKit/Sources/CoreHostXPC/**"
+      - "App/CoreHost-Info.plist"
+      - ".github/workflows/xpc-smoke.yml"
+
+jobs:
+  smoke:
+    name: launchd-hosted service handshake
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble app
+        run: ./Scripts/make-app.sh
+      - name: Handshake with bundled service
+        run: |
+          CODENAME_XPC_SMOKE=1 ./build/CODENAME.app/Contents/MacOS/CODENAME 2> smoke.log &
+          APP_PID=$!
+          sleep 8
+          kill $APP_PID 2>/dev/null || true
+          cat smoke.log | grep -v CoreAudio || true
+          grep -q "xpc smoke: helper version 1" smoke.log
