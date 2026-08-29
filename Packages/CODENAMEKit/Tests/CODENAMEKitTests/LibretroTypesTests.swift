@@ -29,7 +29,8 @@ import Testing
     info.geometry.base_height = 224
     info.geometry.max_width = 512
     info.geometry.max_height = 448
-    info.geometry.aspect_ratio = 4.0 / 3.0
+    // 1.5 is exactly representable in Float, so the Double round-trip compares exactly.
+    info.geometry.aspect_ratio = 1.5
     info.timing.fps = 60.0988
     info.timing.sample_rate = 32040.5
     return info
@@ -39,7 +40,7 @@ import Testing
     let av = CoreAVInfo(sampleCInfo())
     #expect(av.baseSize == CoreAVInfo.Size(width: 256, height: 224))
     #expect(av.maxSize == CoreAVInfo.Size(width: 512, height: 448))
-    #expect(av.aspectRatio == 4.0 / 3.0)
+    #expect(av.aspectRatio == 1.5)
     #expect(av.framesPerSecond == 60.0988)
     #expect(av.audioSampleRate == 32040.5)
   }
