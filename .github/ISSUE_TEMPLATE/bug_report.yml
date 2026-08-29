@@ -1,0 +1,45 @@
+name: Bug report
+description: Something is broken.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not attach or link ROMs, BIOS files, firmware, or keys anywhere in this report. Reports containing them are deleted.
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      placeholder: e.g. 0.1.0 (build 42)
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and hardware
+      placeholder: e.g. macOS 26.1, M2 Pro
+    validations:
+      required: true
+  - type: input
+    id: core
+    attributes:
+      label: Core and version (if relevant)
+      placeholder: e.g. snes9x 1.63
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: Numbered steps. Name content only generically (e.g. "a US-region SNES title").
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or crash report
+      description: Console output or the relevant excerpt of a crash report.
