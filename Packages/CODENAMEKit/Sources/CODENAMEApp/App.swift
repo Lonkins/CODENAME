@@ -6,6 +6,7 @@ import Sparkle
 final class AppDelegate: NSObject, NSApplicationDelegate {
   private var window: NSWindow?
   private var displayLoop: CoreDisplayLoop?
+  private var inputController: InputController?
   private let updaterController = SPUStandardUpdaterController(
     startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
 
@@ -43,6 +44,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let loop = CoreDisplayLoop(layer: gameView.metalLayer, coreURL: core)
         displayLoop = loop
         loop.start()
+        let input = InputController(inputState: loop.inputState)
+        input.start()
+        inputController = input
       }
     }
   }

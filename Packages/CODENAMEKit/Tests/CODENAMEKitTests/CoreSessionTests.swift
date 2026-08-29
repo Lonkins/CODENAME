@@ -71,6 +71,26 @@ struct CoreSessionTests {
     #expect(frame.bytes[0] == 6 && frame.bytes[1] == 0)
   }
 
+  @Test func inputReachesCoreThroughABI() throws {
+    let session = try makeSession()
+    defer { session.shutdown() }
+    try session.loadGame(path: nil)
+
+    session.run(frames: 1)
+    var frame = try #require(session.latestFrame)
+    #expect(frame.bytes[2] == 0 && frame.bytes[3] == 0)
+
+    session.inputState.set(.b, pressed: true)
+    session.run(frames: 1)
+    frame = try #require(session.latestFrame)
+    #expect(frame.bytes[2] == 1 && frame.bytes[3] == 0)
+
+    session.inputState.set(.b, pressed: false)
+    session.run(frames: 1)
+    frame = try #require(session.latestFrame)
+    #expect(frame.bytes[2] == 0 && frame.bytes[3] == 0)
+  }
+
   @Test func drainReturnsAndClearsAudio() throws {
     let session = try makeSession()
     defer { session.shutdown() }

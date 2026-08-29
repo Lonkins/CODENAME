@@ -25,6 +25,7 @@ public final class CoreSession {
   public private(set) var avInfo: CoreAVInfo?
   public private(set) var latestFrame: VideoFrame?
   public private(set) var audioSamples: [Int16] = []
+  public let inputState: InputState
 
   private let library: CoreLibrary
   private let environment: EnvironmentHandler
@@ -35,9 +36,10 @@ public final class CoreSession {
   // (alreadyActive guard) and all core calls happen on the owning thread.
   private nonisolated(unsafe) static var current: CoreSession?
 
-  public init(coreURL: URL, policy: CoreTrustPolicy, environment: EnvironmentHandler)
-    throws(SessionError)
-  {
+  public init(
+    coreURL: URL, policy: CoreTrustPolicy, environment: EnvironmentHandler,
+    inputState: InputState = InputState()
+  ) throws(SessionError) {
     guard Self.current == nil else { throw .alreadyActive }
     do {
       library = try CoreLibrary(url: coreURL, policy: policy)
@@ -45,6 +47,7 @@ public final class CoreSession {
       throw .load(error)
     }
     self.environment = environment
+    self.inputState = inputState
     Self.current = self
 
     // Spec order: environment callback first, then the rest, then retro_init.
@@ -61,7 +64,10 @@ public final class CoreSession {
       CoreSession.current?.captureAudio(data: data, frames: frames) ?? 0
     }
     library.symbols.setInputPoll {}
-    library.symbols.setInputState { _, _, _, _ in 0 }
+    library.symbols.setInputState { port, device, _, id in
+      guard port == 0, device == UInt32(RETRO_DEVICE_JOYPAD) else { return 0 }
+      return CoreSession.current?.inputState.value(forDeviceID: id) ?? 0
+    }
     library.symbols.initCore()
   }
 

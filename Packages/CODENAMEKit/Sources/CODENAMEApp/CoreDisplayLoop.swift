@@ -7,6 +7,7 @@ import QuartzCore
 /// the display link is the clock; one retro_run per N vblanks, late-latch
 /// blit into the update's drawable).
 final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
+  let inputState = InputState()
   private let layer: CAMetalLayer
   private let coreURL: URL
   private var session: CoreSession?
@@ -44,7 +45,8 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     let policy = CoreTrustPolicy(allowedDirectory: coreURL.deletingLastPathComponent())
 
     do {
-      let session = try CoreSession(coreURL: coreURL, policy: policy, environment: environment)
+      let session = try CoreSession(
+        coreURL: coreURL, policy: policy, environment: environment, inputState: inputState)
       try session.loadGame(path: nil)
       self.session = session
     } catch {
