@@ -8,6 +8,7 @@ let package = Package(
     .library(name: "CODENAMEKit", targets: ["CODENAMEKit"]),
     .executable(name: "CODENAMEApp", targets: ["CODENAMEApp"]),
     .library(name: "TestCore", type: .dynamic, targets: ["TestCore"]),
+    .executable(name: "conformance-runner", targets: ["ConformanceRunner"]),
   ],
   dependencies: [
     .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0")
@@ -24,6 +25,7 @@ let package = Package(
         .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])
       ]
     ),
+    .executableTarget(name: "ConformanceRunner", dependencies: ["CODENAMEKit"]),
     .testTarget(name: "CODENAMEKitTests", dependencies: ["CODENAMEKit"]),
   ]
 )
