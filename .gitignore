@@ -1,0 +1,19 @@
+# Internal working documents — never committed
+CLAUDE.md
+.internal/
+
+# macOS
+.DS_Store
+
+# Xcode / SwiftPM
+.build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+
+# Signing material — never committed
+*.p12
+*.mobileprovision
+*.provisionprofile
+*.pem
+*.key
