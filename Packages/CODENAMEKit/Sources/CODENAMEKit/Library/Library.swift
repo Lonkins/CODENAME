@@ -136,6 +136,13 @@ public final class LibraryModel {
     persist()
   }
 
+  /// Bumped when artwork changes so views depending on the model re-read it.
+  public private(set) var artworkRevision = 0
+
+  public func noteArtworkChanged() {
+    artworkRevision += 1
+  }
+
   public func recents(limit: Int) -> [GameEntry] {
     library.entries
       .filter { $0.lastPlayedAt != nil }

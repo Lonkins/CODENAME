@@ -236,9 +236,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     window.contentView = NSHostingView(
       rootView: LibraryView(
         model: libraryModel,
+        artwork: ArtworkStore(),
         onPlay: { [weak self] entry in self?.play(entry: entry) },
         onAddFolder: { [weak self] in self?.addFolderAction(nil) },
-        onOpenFile: { [weak self] in self?.openGameAction(nil) }))
+        onOpenFile: { [weak self] in self?.openGameAction(nil) },
+        onImportArtwork: { [weak self] in self?.importArtworkAction(nil) }))
     window.center()
     window.makeKeyAndOrderFront(nil)
     libraryWindow = window
@@ -254,6 +256,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
       guard let bookmark = try? Bookmark.create(for: url) else { return }
       let source = self.libraryModel.addSource(bookmark: bookmark, name: url.lastPathComponent)
       self.rescan(source: source, at: url)
+    }
+  }
+
+  @objc private func importArtworkAction(_ sender: Any?) {
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = false
+    panel.canChooseDirectories = true
+    panel.allowsMultipleSelection = false
+    panel.message = "Choose a folder of images named after your games"
+    panel.begin { [weak self] response in
+      guard let self, response == .OK, let url = panel.url else { return }
+      let access = ScopedAccess(url: url)
+      let imported = ArtworkStore().importMatching(
+        folder: url, entries: self.libraryModel.library.entries)
+      _ = access
+      self.libraryModel.noteArtworkChanged()
+      let alert = NSAlert()
+      alert.messageText = "Imported artwork for \(imported) game\(imported == 1 ? "" : "s")"
+      alert.runModal()
     }
   }
 

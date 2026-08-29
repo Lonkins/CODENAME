@@ -4,9 +4,11 @@ import SwiftUI
 /// The library surface: sources + games, actions injected by the delegate.
 struct LibraryView: View {
   let model: LibraryModel
+  let artwork: ArtworkStore
   let onPlay: (GameEntry) -> Void
   let onAddFolder: () -> Void
   let onOpenFile: () -> Void
+  let onImportArtwork: () -> Void
 
   var body: some View {
     Group {
@@ -25,6 +27,19 @@ struct LibraryView: View {
         List {
           ForEach(sortedEntries, id: \.id) { entry in
             HStack {
+              Group {
+                if let url = artwork.artworkURL(for: entry.id),
+                  let image = NSImage(contentsOf: url)
+                {
+                  Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                } else {
+                  Image(systemName: "gamecontroller")
+                    .foregroundStyle(.tertiary)
+                }
+              }
+              .frame(width: 44, height: 44)
               VStack(alignment: .leading) {
                 Text(entry.displayName)
                 Text(entry.coreID)
@@ -40,8 +55,10 @@ struct LibraryView: View {
         }
       }
     }
+    .id(model.artworkRevision)  // re-read artwork files after an import
     .toolbar {
       Button("Add Folder…", action: onAddFolder)
+      Button("Import Artwork…", action: onImportArtwork)
     }
     .frame(minWidth: 420, minHeight: 300)
   }
