@@ -1,4 +1,5 @@
 import AppKit
+import CODENAMEKit
 import Sparkle
 
 @main
@@ -30,25 +31,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     window.title = "CODENAME"
     let gameView = GameView(frame: window.contentLayoutRect)
     gameView.autoresizingMask = [.width, .height]
-    gameView.metalLayer.drawableSize = CGSize(width: 1920, height: 1080)
     window.contentView = gameView
     window.center()
     window.makeKeyAndOrderFront(nil)
     self.window = window
     NSApp.activate()
 
-    // Development core from the app bundle; real cores arrive per ADR 0001.
-    if let plugins = Bundle.main.builtInPlugInsURL {
-      let core = plugins.appendingPathComponent("libTestCore.dylib")
-      if FileManager.default.fileExists(atPath: core.path) {
-        let loop = CoreDisplayLoop(layer: gameView.metalLayer, coreURL: core)
-        displayLoop = loop
-        loop.start()
-        let input = InputController(inputState: loop.inputState)
-        input.start()
-        inputController = input
-      }
+    // The display link needs a non-zero drawableSize before it can vend drawables.
+    gameView.layoutSubtreeIfNeeded()
+
+    guard let coreURL = resolveCoreURL() else { return }
+    let contentPath = ProcessInfo.processInfo.environment["CODENAME_CONTENT"]
+    let refresh = Double(window.screen?.maximumFramesPerSecond ?? 60)
+    let loop = CoreDisplayLoop(
+      layer: gameView.metalLayer, coreURL: coreURL,
+      contentPath: contentPath, displayRefresh: refresh)
+    displayLoop = loop
+    loop.start()
+
+    let mapping = loadMapping(forCore: coreURL)
+    let input = InputController(inputState: loop.inputState, mapping: mapping)
+    input.start()
+    inputController = input
+  }
+
+  /// Development override first (CODENAME_CORE), then bundled plug-ins.
+  private func resolveCoreURL() -> URL? {
+    if let override = ProcessInfo.processInfo.environment["CODENAME_CORE"] {
+      return URL(fileURLWithPath: override)
     }
+    guard let plugins = Bundle.main.builtInPlugInsURL else { return nil }
+    let testCore = plugins.appendingPathComponent("libTestCore.dylib")
+    return FileManager.default.fileExists(atPath: testCore.path) ? testCore : nil
+  }
+
+  private func loadMapping(forCore coreURL: URL) -> ButtonMapping {
+    let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+    let file = support[0]
+      .appendingPathComponent("CODENAME/Mappings", isDirectory: true)
+      .appendingPathComponent(coreURL.deletingPathExtension().lastPathComponent + ".json")
+    return (try? ButtonMappingStore.load(from: file)) ?? .defaultMapping
   }
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

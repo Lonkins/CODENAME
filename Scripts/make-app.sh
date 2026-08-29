@@ -28,6 +28,10 @@ cp "$BIN" "$APP/Contents/MacOS/CODENAME"
 cp -R "$SPARKLE_FRAMEWORK" "$APP/Contents/Frameworks/"
 # Development core until curated cores land (ADR 0001).
 cp "$BUILD_DIR/libTestCore.dylib" "$APP/Contents/PlugIns/"
+# Real cores ride along when built (Scripts/build-cores.sh).
+if ls build/cores/*.dylib >/dev/null 2>&1; then
+  cp build/cores/*.dylib "$APP/Contents/PlugIns/"
+fi
 lipo -thin arm64 "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle" \
   -output "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle"
 sed -e "s/__VERSION__/$VERSION/g" -e "s/__BUILD__/$BUILD/g" App/Info.plist > "$APP/Contents/Info.plist"
@@ -40,7 +44,9 @@ RUNTIME_OPTS=""
 if [ "$IDENTITY" != "-" ]; then RUNTIME_OPTS="--options runtime"; fi
 
 # Sign inside-out: plug-ins and Sparkle's nested services, the framework, then the app.
-codesign --force $RUNTIME_OPTS --sign "$IDENTITY" "$APP/Contents/PlugIns/libTestCore.dylib"
+for plugin in "$APP/Contents/PlugIns/"*.dylib; do
+  codesign --force $RUNTIME_OPTS --sign "$IDENTITY" "$plugin"
+done
 FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
 for NESTED in \
   "$FRAMEWORK/Versions/B/XPCServices/Downloader.xpc" \
