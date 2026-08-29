@@ -359,6 +359,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
       displayOverrides: displayOverrides)
   }
 
+  private var remapWindow: NSWindow?
+
+  @objc private func showRemapAction(_ sender: Any?) {
+    if let remapWindow {
+      remapWindow.makeKeyAndOrderFront(nil)
+      return
+    }
+    let names = catalog.entries.map { $0.url.deletingPathExtension().lastPathComponent }
+    let window = NSWindow(
+      contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
+    window.title = "Controller Mapping"
+    window.isReleasedWhenClosed = false
+    window.contentView = NSHostingView(
+      rootView: RemapView(
+        coreNames: names,
+        load: { [weak self] core in self?.mappingOnDisk(forCoreNamed: core) ?? .defaultMapping },
+        save: { [weak self] core, mapping in self?.saveMapping(mapping, forCoreNamed: core) }))
+    window.center()
+    window.makeKeyAndOrderFront(nil)
+    remapWindow = window
+  }
+
+  private func mappingURL(forCoreNamed core: String) -> URL {
+    AppPaths.mappings.appendingPathComponent(core + ".json")
+  }
+
+  private func mappingOnDisk(forCoreNamed core: String) -> ButtonMapping {
+    (try? ButtonMappingStore.load(from: mappingURL(forCoreNamed: core))) ?? .defaultMapping
+  }
+
+  private func saveMapping(_ mapping: ButtonMapping, forCoreNamed core: String) {
+    AppPaths.ensureExists()
+    try? ButtonMappingStore.save(mapping, to: mappingURL(forCoreNamed: core))
+  }
+
   @objc private func showSettingsAction(_ sender: Any?) {
     if let settingsWindow {
       settingsWindow.makeKeyAndOrderFront(nil)
@@ -456,6 +491,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
       load.tag = slot
       gameMenu.addItem(load)
     }
+    gameMenu.addItem(.separator())
+    let remapItem = NSMenuItem(
+      title: "Controller Mapping…", action: #selector(showRemapAction(_:)), keyEquivalent: "")
+    remapItem.target = self
+    gameMenu.addItem(remapItem)
     gameMenu.addItem(.separator())
     let fullScreenItem = NSMenuItem(
       title: "Toggle Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)),
