@@ -1,0 +1,25 @@
+name: Feature request
+description: Propose an improvement.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the open issues and `docs/adr/` first — some directions are decided and documented. Requests for ROM sources or acquisition features are out of scope and will be closed.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What can't you do today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
