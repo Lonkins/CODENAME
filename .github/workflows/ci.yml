@@ -26,6 +26,10 @@ jobs:
           swift build --package-path Packages/CODENAMEKit --product TestCore
           BIN="$(swift build --package-path Packages/CODENAMEKit --show-bin-path)"
           TEST_CORE_PATH="$BIN/libTestCore.dylib" swift test --package-path Packages/CODENAMEKit
+      - name: Test (thread sanitizer)
+        run: |
+          BIN="$(swift build --package-path Packages/CODENAMEKit --show-bin-path --sanitize=thread)"
+          TEST_CORE_PATH="$BIN/libTestCore.dylib" swift test --package-path Packages/CODENAMEKit --sanitize=thread
       - name: Lint
         run: swift format lint --strict --recursive Packages
       - name: Assemble app bundle (ad-hoc signed)
