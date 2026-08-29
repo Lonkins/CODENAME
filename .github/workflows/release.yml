@@ -51,6 +51,9 @@ jobs:
             echo "ASC_ISSUER_ID=${{ secrets.ASC_ISSUER_ID }}"
           } >> "$GITHUB_ENV"
 
+      - name: Build curated cores
+        run: ./Scripts/build-cores.sh
+
       - name: Build release artifact
         run: |
           VERSION="${GITHUB_REF_NAME#v}" BUILD="${{ github.run_number }}" ./Scripts/make-release.sh
