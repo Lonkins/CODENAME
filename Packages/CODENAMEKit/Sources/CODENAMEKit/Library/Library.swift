@@ -107,6 +107,33 @@ public final class LibraryModel {
     persist()
   }
 
+  @discardableResult
+  public func addSource(bookmark: Data, name: String) -> LibrarySource {
+    let source = LibrarySource(id: UUID(), bookmark: bookmark, name: name)
+    library.sources.append(source)
+    persist()
+    return source
+  }
+
+  /// Replaces a source's entries with a fresh scan, preserving play history
+  /// by relative path; File→Open singles (sourceID nil) are untouched.
+  public func applyScan(
+    sourceID: UUID, games: [ScannedGame], coreIDFor: (String) -> String?
+  ) {
+    let previous = library.entries.filter { $0.sourceID == sourceID }
+    library.entries.removeAll { $0.sourceID == sourceID }
+    for game in games {
+      guard let coreID = coreIDFor(game.ext) else { continue }
+      let existing = previous.first { $0.relativePath == game.relativePath }
+      library.entries.append(
+        GameEntry(
+          id: existing?.id ?? UUID(), sourceID: sourceID, relativePath: game.relativePath,
+          bookmark: nil, displayName: game.displayName, coreID: coreID,
+          addedAt: existing?.addedAt ?? Date(), lastPlayedAt: existing?.lastPlayedAt))
+    }
+    persist()
+  }
+
   public func recents(limit: Int) -> [GameEntry] {
     library.entries
       .filter { $0.lastPlayedAt != nil }
