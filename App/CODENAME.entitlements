@@ -2,8 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <!-- ADR 0001: sandboxed, zero hardened-runtime exceptions, no network. -->
+  <!-- ADR 0001: sandboxed, zero hardened-runtime exceptions, no network.
+       The two file keys are user-mediated scope-extension grants (powerbox);
+       see ADR 0001's Phase 2 amendment. -->
   <key>com.apple.security.app-sandbox</key>
+  <true/>
+  <key>com.apple.security.files.user-selected.read-only</key>
+  <true/>
+  <key>com.apple.security.files.bookmarks.app-scope</key>
   <true/>
 </dict>
 </plist>

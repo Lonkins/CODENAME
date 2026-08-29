@@ -9,6 +9,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
   private var gameWindow: NSWindow?
   private var displayLoop: CoreDisplayLoop?
   private var inputController: InputController?
+  private var contentAccess: ScopedAccess?
+  private lazy var catalog = CoreCatalog(
+    pluginsDirectory: Bundle.main.builtInPlugInsURL ?? URL(fileURLWithPath: "/nonexistent"))
   private let updaterController = SPUStandardUpdaterController(
     startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
 
@@ -55,8 +58,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
   // MARK: - Session lifecycle (ADR 0005: window existence == session existence)
 
-  func startGame(coreURL: URL, contentPath: String?) {
+  @objc private func openGameAction(_ sender: Any?) {
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = true
+    panel.canChooseDirectories = false
+    panel.allowsMultipleSelection = false
+    panel.begin { [weak self] response in
+      guard let self, response == .OK, let url = panel.url else { return }
+      self.openContent(at: url)
+    }
+  }
+
+  private func openContent(at url: URL) {
+    guard let entry = catalog.core(forExtension: url.pathExtension) else {
+      let alert = NSAlert()
+      alert.messageText = "No bundled core plays “.\(url.pathExtension)” files"
+      alert.informativeText =
+        "Supported types: \(catalog.allExtensions.map { ".\($0)" }.joined(separator: ", "))"
+      alert.runModal()
+      return
+    }
+    startGame(coreURL: entry.url, contentPath: url.path, contentAccess: ScopedAccess(url: url))
+  }
+
+  func startGame(coreURL: URL, contentPath: String?, contentAccess: ScopedAccess? = nil) {
     stopGame()
+    self.contentAccess = contentAccess
 
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 960, height: 540),
@@ -90,6 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     displayLoop?.stop()
     displayLoop = nil
     inputController = nil
+    contentAccess = nil
     if let window = gameWindow {
       window.delegate = nil
       window.close()
@@ -168,6 +196,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
       withTitle: "Quit CODENAME",
       action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
+    let fileMenu = NSMenu(title: "File")
+    let openItem = NSMenuItem(
+      title: "Open…", action: #selector(openGameAction(_:)), keyEquivalent: "o")
+    openItem.target = self
+    fileMenu.addItem(openItem)
+
     let gameMenu = NSMenu(title: "Game")
     let stopItem = NSMenuItem(
       title: "Stop", action: #selector(stopGameAction(_:)), keyEquivalent: "w")
@@ -176,10 +210,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     let appMenuItem = NSMenuItem()
     appMenuItem.submenu = appMenu
+    let fileMenuItem = NSMenuItem()
+    fileMenuItem.submenu = fileMenu
     let gameMenuItem = NSMenuItem()
     gameMenuItem.submenu = gameMenu
     let mainMenu = NSMenu()
     mainMenu.addItem(appMenuItem)
+    mainMenu.addItem(fileMenuItem)
     mainMenu.addItem(gameMenuItem)
     return mainMenu
   }
