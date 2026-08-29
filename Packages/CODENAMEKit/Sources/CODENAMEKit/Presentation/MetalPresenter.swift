@@ -61,7 +61,8 @@ public final class MetalPresenter {
   }
 
   public func render(
-    frame: CoreSession.VideoFrame, into target: MTLTexture, destination: IntegerScaler.Rect
+    frame: CoreSession.VideoFrame, into target: MTLTexture, destination: IntegerScaler.Rect,
+    presenting drawable: (any MTLDrawable)? = nil
   ) throws {
     let bgra = PixelConverter.toBGRA8(
       bytes: frame.bytes, width: frame.width, height: frame.height,
@@ -94,6 +95,11 @@ public final class MetalPresenter {
     encoder.setFragmentTexture(source, index: 0)
     encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
     encoder.endEncoding()
+    // Canonical present: scheduled inside the command buffer, so drawables
+    // recycle regardless of app activation state.
+    if let drawable {
+      commands.present(drawable)
+    }
     commands.commit()
     commands.waitUntilCompleted()
   }

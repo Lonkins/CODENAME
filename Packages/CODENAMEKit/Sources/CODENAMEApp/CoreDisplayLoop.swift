@@ -20,6 +20,10 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
   private var vblankCount = 0
   private var paceFrameCount = 0
   private var paceWindowStart = 0.0
+  private var thread: Thread?
+  private var displayLink: CAMetalDisplayLink?
+  private var activity: NSObjectProtocol?
+  private var coreThreadShouldRun = true  // flipped on the core thread itself, in teardown
 
   init(layer: CAMetalLayer, coreURL: URL, contentPath: String?, displayRefresh: Double) {
     self.layer = layer
@@ -31,24 +35,52 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
 
   /// Spawns the core thread; everything after this line happens there.
   func start() {
+    // Without this, App Nap suspends the display link once the user idles
+    // (observed as a hard stall after ~4 callbacks). Session-scoped.
+    activity = ProcessInfo.processInfo.beginActivity(
+      options: [.userInitiated, .latencyCritical], reason: "emulation session")
     let thread = Thread { [self] in
       setUpOnCoreThread()
-      RunLoop.current.run()
+      // Foundation's run() re-enters after CFRunLoopStop; loop a stoppable form.
+      while coreThreadShouldRun && RunLoop.current.run(mode: .default, before: .distantFuture) {}
       NSLog("core thread run loop exited")
     }
     thread.name = "CODENAME.core"
     thread.qualityOfService = .userInteractive
+    self.thread = thread
     thread.start()
   }
 
-  private func setUpOnCoreThread() {
-    let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-    let baseDirectory = support[0].appendingPathComponent("CODENAME", isDirectory: true)
-    try? FileManager.default.createDirectory(at: baseDirectory, withIntermediateDirectories: true)
+  /// Synchronous teardown on the core thread (order per ADR 0005): display
+  /// link, audio, session (dlclose), then the run loop so the thread exits.
+  func stop() {
+    if let activity {
+      ProcessInfo.processInfo.endActivity(activity)
+      self.activity = nil
+    }
+    guard let thread, thread.isExecuting else { return }
+    perform(#selector(tearDownOnCoreThread), on: thread, with: nil, waitUntilDone: true)
+    self.thread = nil
+  }
 
+  @objc private func tearDownOnCoreThread() {
+    displayLink?.invalidate()
+    displayLink = nil
+    audioOutput?.stop()
+    audioOutput = nil
+    session?.shutdown()
+    session = nil
+    presenter = nil
+    audioRing = nil
+    coreThreadShouldRun = false
+    NSLog("session stopped after %d vblank callbacks", vblankCount)
+    CFRunLoopStop(CFRunLoopGetCurrent())
+  }
+
+  private func setUpOnCoreThread() {
+    AppPaths.ensureExists()
     let environment = EnvironmentHandler(
-      systemDirectory: baseDirectory.appendingPathComponent("System"),
-      saveDirectory: baseDirectory.appendingPathComponent("Saves"))
+      systemDirectory: AppPaths.system, saveDirectory: AppPaths.saves)
     let policy = CoreTrustPolicy(allowedDirectory: coreURL.deletingLastPathComponent())
 
     do {
@@ -88,6 +120,7 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     let displayLink = CAMetalDisplayLink(metalLayer: layer)
     displayLink.delegate = self
     displayLink.add(to: .current, forMode: .default)
+    self.displayLink = displayLink
     NSLog(
       "display link armed, drawable %.0fx%.0f",
       layer.drawableSize.width, layer.drawableSize.height)
@@ -125,8 +158,8 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
       contentWidth: frame.width, contentHeight: frame.height, aspectRatio: aspect,
       drawableWidth: texture.width, drawableHeight: texture.height, integerOnly: true)
     do {
-      try presenter.render(frame: frame, into: texture, destination: destination)
-      update.drawable.present()
+      try presenter.render(
+        frame: frame, into: texture, destination: destination, presenting: update.drawable)
     } catch {
       NSLog("render failed: \(error)")
     }
