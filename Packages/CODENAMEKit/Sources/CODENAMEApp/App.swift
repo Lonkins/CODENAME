@@ -35,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     NSApp.mainMenu = makeMainMenu()
     showLibraryWindow()
     NSApp.activate()
+    rescanAllSources()
 
     // Development/conformance auto-start path (ADR 0005 §5.7).
     if let core = ProcessInfo.processInfo.environment["CODENAME_CORE"] {
@@ -77,7 +78,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
   }
 
+  // Boundary hygiene (ADR 0001 amendment): cartridge content has hard size
+  // maxima; refuse absurd files before handing bytes to a core.
+  private static let maxContentBytes = 64 * 1024 * 1024
+
   private func openContent(at url: URL) {
+    let size =
+      (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? nil
+    if let size, size > Self.maxContentBytes {
+      let alert = NSAlert()
+      alert.messageText = "File is too large to be cartridge content"
+      alert.runModal()
+      return
+    }
     guard let entry = catalog.core(forExtension: url.pathExtension) else {
       let alert = NSAlert()
       alert.messageText = "No bundled core plays “.\(url.pathExtension)” files"
@@ -202,28 +215,79 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
       return
     }
     let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 480, height: 320),
-      styleMask: [.titled, .closable, .miniaturizable],
+      contentRect: NSRect(x: 0, y: 0, width: 560, height: 400),
+      styleMask: [.titled, .closable, .miniaturizable, .resizable],
       backing: .buffered,
       defer: false
     )
     window.title = "CODENAME"
     window.isReleasedWhenClosed = false
-    let label = NSTextField(labelWithString: "Open a Genesis or SNES game\nFile → Open…")
-    label.alignment = .center
-    label.textColor = .secondaryLabelColor
-    label.font = .systemFont(ofSize: 16)
-    label.translatesAutoresizingMaskIntoConstraints = false
-    let content = NSView()
-    content.addSubview(label)
-    NSLayoutConstraint.activate([
-      label.centerXAnchor.constraint(equalTo: content.centerXAnchor),
-      label.centerYAnchor.constraint(equalTo: content.centerYAnchor),
-    ])
-    window.contentView = content
+    window.contentView = NSHostingView(
+      rootView: LibraryView(
+        model: libraryModel,
+        onPlay: { [weak self] entry in self?.play(entry: entry) },
+        onAddFolder: { [weak self] in self?.addFolderAction(nil) },
+        onOpenFile: { [weak self] in self?.openGameAction(nil) }))
     window.center()
     window.makeKeyAndOrderFront(nil)
     libraryWindow = window
+  }
+
+  @objc private func addFolderAction(_ sender: Any?) {
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = false
+    panel.canChooseDirectories = true
+    panel.allowsMultipleSelection = false
+    panel.begin { [weak self] response in
+      guard let self, response == .OK, let url = panel.url else { return }
+      guard let bookmark = try? Bookmark.create(for: url) else { return }
+      let source = self.libraryModel.addSource(bookmark: bookmark, name: url.lastPathComponent)
+      self.rescan(source: source, at: url)
+    }
+  }
+
+  private func rescanAllSources() {
+    for source in libraryModel.library.sources {
+      guard let resolved = try? Bookmark.resolve(source.bookmark) else { continue }
+      rescan(source: source, at: resolved.url)
+    }
+  }
+
+  private func rescan(source: LibrarySource, at url: URL) {
+    let access = ScopedAccess(url: url)
+    let games = LibraryScanner.scan(root: url, extensions: Set(catalog.allExtensions))
+    libraryModel.applyScan(sourceID: source.id, games: games) { [catalog] ext in
+      catalog.core(forExtension: ext)?.url.deletingPathExtension().lastPathComponent
+    }
+    _ = access  // scan-scoped access
+  }
+
+  private func play(entry: GameEntry) {
+    if let sourceID = entry.sourceID {
+      guard let source = libraryModel.library.sources.first(where: { $0.id == sourceID }),
+        let resolved = try? Bookmark.resolve(source.bookmark)
+      else { return }
+      let contentURL = resolved.url.appendingPathComponent(entry.relativePath)
+      libraryModel.recordPlay(
+        path: entry.relativePath, displayName: entry.displayName,
+        coreID: entry.coreID, bookmark: nil)
+      startGameRouted(
+        contentURL: contentURL, coreID: entry.coreID,
+        contentAccess: ScopedAccess(url: resolved.url))
+    } else {
+      let recentsStyle = NSMenuItem()
+      recentsStyle.representedObject = entry
+      openRecentAction(recentsStyle)
+    }
+  }
+
+  private func startGameRouted(contentURL: URL, coreID: String, contentAccess: ScopedAccess) {
+    guard
+      let core = catalog.entries.first(where: {
+        $0.url.deletingPathExtension().lastPathComponent == coreID
+      }) ?? catalog.core(forExtension: contentURL.pathExtension)
+    else { return }
+    startGame(coreURL: core.url, contentPath: contentURL.path, contentAccess: contentAccess)
   }
 
   @objc private func showSettingsAction(_ sender: Any?) {
@@ -295,6 +359,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     recentsMenu.delegate = self
     recentsItem.submenu = recentsMenu
     fileMenu.addItem(recentsItem)
+    let addFolderItem = NSMenuItem(
+      title: "Add Folder…", action: #selector(addFolderAction(_:)), keyEquivalent: "O")
+    addFolderItem.target = self
+    fileMenu.addItem(addFolderItem)
 
     let gameMenu = NSMenu(title: "Game")
     for slot in 1...3 {
