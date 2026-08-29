@@ -2,13 +2,24 @@
 
 A native Apple Silicon (arm64) macOS frontend for [libretro](https://www.libretro.com/) cores, built for game preservation and research.
 
-Swift 6, Metal presentation, macOS 15+. Signed, notarized, sandboxed, and Gatekeeper-clean by design — the security posture is the point, not an afterthought: the app ships with **zero** hardened-runtime exceptions (see [ADR 0001](docs/adr/0001-core-loading-and-entitlements.md)).
+Swift 6, Metal presentation, macOS 15+. Sandboxed with **zero** hardened-runtime exceptions and no network access in the app — the security posture is the point, not an afterthought (see [ADR 0001](docs/adr/0001-core-loading-and-entitlements.md)).
 
-## Status: pre-alpha
+<p align="center">
+  <img src="docs/assets/super-mario-world.png" width="384" alt="SNES emulation via the bundled Snes9x core">
+  <img src="docs/assets/sonic.png" width="480" alt="Mega Drive emulation via the bundled Genesis Plus GX core">
+</p>
 
-Phase 0 (foundations) is in place: CI on arm64 runners, a tag-driven release pipeline (Developer ID signing → notarization → stapled `.dmg`), and a [Sparkle](https://sparkle-project.org) update channel with an EdDSA-signed [appcast](https://lonkins.github.io/CODENAME/appcast.xml).
+<sub>Frames rendered by this host through the bundled Snes9x and Genesis Plus GX cores, captured with the project's own conformance tool. Game content shown is the property of its respective owners and is not distributed here.</sub>
 
-Phase 1 (the libretro core host: video, audio, input, save states) is implemented and CI-verified against real cores; full emulation verification against user-supplied content is in progress.
+## Status: pre-alpha, working emulation
+
+What works today:
+
+- **Plays Mega Drive/Genesis and SNES games** via bundled, pinned-source builds of Genesis Plus GX and Snes9x — verified at correct speed with audio, input, and deterministic save states by an automated conformance harness.
+- **A real Mac app experience**: File → Open with type routing, Open Recent, a folder-scanning game library, battery-save (SRAM) persistence, three save-state slots (⌘S/⌘L), integer or aspect-fit scaling, ProMotion-aware frame pacing with dynamic audio rate control.
+- **Infrastructure**: CI on arm64 runners (tests + thread sanitizer), a tag-driven release pipeline, and a [Sparkle](https://sparkle-project.org) update channel with an EdDSA-signed [appcast](https://lonkins.github.io/CODENAME/appcast.xml).
+
+Why this exists: [OpenEmu](https://openemu.org) defined Mac-native emulation but has been dormant since 2023 with no Apple Silicon binary, and Rosetta 2's window is closing. CODENAME is an arm64-native, sandboxed, update-channeled successor built in the open.
 
 ## Install
 
