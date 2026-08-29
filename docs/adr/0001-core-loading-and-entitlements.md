@@ -1,6 +1,6 @@
 # ADR 0001: Core loading and entitlements
 
-- Status: **Proposed — awaiting maintainer approval. No loader code before approval.**
+- Status: **Accepted** (maintainer approval 2026-08-29)
 - Date: 2026-08-29
 
 ## Context
