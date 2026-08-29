@@ -1,6 +1,7 @@
 // Minimal software-rendered libretro core used only by the test suite.
 #include "libretro.h"
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define FRAME_W 320
@@ -57,6 +58,14 @@ RETRO_API void retro_get_system_av_info(struct retro_system_av_info *info) {
 
 RETRO_API bool retro_load_game(const struct retro_game_info *game) {
   (void)game;
+  // Test knob: pretend to be a hardware-rendered core so the host's
+  // rejection path can be exercised without a real GL/Vulkan core.
+  if (getenv("TEST_CORE_REQUEST_HW") && env_cb) {
+    struct retro_hw_render_callback hw;
+    memset(&hw, 0, sizeof(hw));
+    hw.context_type = RETRO_HW_CONTEXT_OPENGL;
+    env_cb(RETRO_ENVIRONMENT_SET_HW_RENDER, &hw);
+  }
   return true;
 }
 
