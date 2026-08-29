@@ -23,10 +23,11 @@ public struct GameEntry: Codable, Identifiable, Equatable, Sendable {
   public var coreID: String
   public var addedAt: Date
   public var lastPlayedAt: Date?
+  public var displayOverrides: DisplaySettings?
 
   public init(
     id: UUID, sourceID: UUID?, relativePath: String, bookmark: Data?, displayName: String,
-    coreID: String, addedAt: Date, lastPlayedAt: Date?
+    coreID: String, addedAt: Date, lastPlayedAt: Date?, displayOverrides: DisplaySettings? = nil
   ) {
     self.id = id
     self.sourceID = sourceID
@@ -36,6 +37,7 @@ public struct GameEntry: Codable, Identifiable, Equatable, Sendable {
     self.coreID = coreID
     self.addedAt = addedAt
     self.lastPlayedAt = lastPlayedAt
+    self.displayOverrides = displayOverrides
   }
 }
 

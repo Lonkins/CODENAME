@@ -4,11 +4,13 @@ import SwiftUI
 struct SettingsView: View {
   @AppStorage("integerScale") private var integerScale = true
   let licences: [(name: String, text: String)]
+  var onIntegerScaleChange: (Bool) -> Void = { _ in }
 
   var body: some View {
     TabView {
       Form {
         Toggle("Integer scaling (sharp pixels)", isOn: $integerScale)
+          .onChange(of: integerScale) { _, newValue in onIntegerScaleChange(newValue) }
         Text("Off fits the picture to the window with correct aspect ratio.")
           .font(.caption)
           .foregroundStyle(.secondary)

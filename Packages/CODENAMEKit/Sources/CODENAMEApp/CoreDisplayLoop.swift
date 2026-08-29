@@ -30,11 +30,17 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
   private var lastFlushedSaveRAM: [UInt8]?
   private var framesSinceFlush = 0
 
-  init(layer: CAMetalLayer, coreURL: URL, contentPath: String?, displayRefresh: Double) {
+  let displaySettings: LiveDisplaySettings
+
+  init(
+    layer: CAMetalLayer, coreURL: URL, contentPath: String?, displayRefresh: Double,
+    displaySettings: LiveDisplaySettings
+  ) {
     self.layer = layer
     self.coreURL = coreURL
     self.contentPath = contentPath
     self.displayRefresh = displayRefresh
+    self.displaySettings = displaySettings
     super.init()
   }
 
@@ -237,7 +243,7 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
 
     guard let frame = session.latestFrame, let aspect = session.avInfo?.aspectRatio else { return }
     let texture = update.drawable.texture
-    let integerOnly = UserDefaults.standard.object(forKey: "integerScale") as? Bool ?? true
+    let integerOnly = displaySettings.integerScale
     let destination = IntegerScaler.destinationRect(
       contentWidth: frame.width, contentHeight: frame.height, aspectRatio: aspect,
       drawableWidth: texture.width, drawableHeight: texture.height, integerOnly: integerOnly)
