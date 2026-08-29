@@ -13,6 +13,7 @@ APP="build/CODENAME.app"
 
 swift build --package-path Packages/CODENAMEKit -c "$CONFIG" --product CODENAMEApp
 swift build --package-path Packages/CODENAMEKit -c "$CONFIG" --product TestCore
+swift build --package-path Packages/CODENAMEKit -c "$CONFIG" --product CoreHostXPC
 BUILD_DIR="$(swift build --package-path Packages/CODENAMEKit -c "$CONFIG" --show-bin-path)"
 BIN="$BUILD_DIR/CODENAMEApp"
 
@@ -35,6 +36,13 @@ cp "$BUILD_DIR/libTestCore.dylib" "$APP/Contents/PlugIns/"
 if ls build/cores/*.dylib >/dev/null 2>&1; then
   cp build/cores/*.dylib "$APP/Contents/PlugIns/"
 fi
+
+# Bundled XPC core-host service (ADR 0006 step B).
+XPC_BUNDLE="$APP/Contents/XPCServices/CoreHost.xpc"
+mkdir -p "$XPC_BUNDLE/Contents/MacOS"
+cp "$BUILD_DIR/CoreHostXPC" "$XPC_BUNDLE/Contents/MacOS/CoreHost"
+sed -e "s/__VERSION__/$VERSION/g" -e "s/__BUILD__/$BUILD/g" App/CoreHost-Info.plist \
+  > "$XPC_BUNDLE/Contents/Info.plist"
 lipo -thin arm64 "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle" \
   -output "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle"
 sed -e "s/__VERSION__/$VERSION/g" -e "s/__BUILD__/$BUILD/g" App/Info.plist > "$APP/Contents/Info.plist"
@@ -50,6 +58,7 @@ if [ "$IDENTITY" != "-" ]; then RUNTIME_OPTS="--options runtime"; fi
 for plugin in "$APP/Contents/PlugIns/"*.dylib; do
   codesign --force $RUNTIME_OPTS --sign "$IDENTITY" "$plugin"
 done
+codesign --force $RUNTIME_OPTS --sign "$IDENTITY" "$XPC_BUNDLE"
 FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
 for NESTED in \
   "$FRAMEWORK/Versions/B/XPCServices/Downloader.xpc" \
