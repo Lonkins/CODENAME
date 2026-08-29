@@ -9,6 +9,8 @@ GENESIS_REPO="https://github.com/libretro/Genesis-Plus-GX"
 GENESIS_SHA="a7985a9c4278ac352f8ca7bb4d3cc6b36e9e3e7d"
 SNES9X_REPO="https://github.com/libretro/snes9x"
 SNES9X_SHA="890b5d445538fe790aa3add3d5702c80f551e0ae"
+MGBA_REPO="https://github.com/libretro/mgba"
+MGBA_SHA="e31759b24e7a4e3899285ff720d7b573ac328ae7"
 
 WORK="build/cores-src"
 OUT="build/cores"
@@ -32,6 +34,17 @@ echo "building snes9x @ ${SNES9X_SHA:0:7}"
 fetch "$SNES9X_REPO" "$SNES9X_SHA" "$WORK/snes9x"
 make -C "$WORK/snes9x/libretro" -j"$(sysctl -n hw.ncpu)" >/dev/null
 cp "$WORK/snes9x/libretro/snes9x_libretro.dylib" "$OUT/"
+
+if command -v cmake >/dev/null 2>&1; then
+  echo "building mgba @ ${MGBA_SHA:0:7}"
+  fetch "$MGBA_REPO" "$MGBA_SHA" "$WORK/mgba"
+  cmake -S "$WORK/mgba" -B "$WORK/mgba/build" -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_LIBRETRO=ON -DBUILD_QT=OFF -DBUILD_SDL=OFF >/dev/null
+  cmake --build "$WORK/mgba/build" -j"$(sysctl -n hw.ncpu)" >/dev/null
+  cp "$WORK/mgba/build/mgba_libretro.dylib" "$OUT/"
+else
+  echo "cmake not found; skipping mgba (CI builds it)" >&2
+fi
 
 for dylib in "$OUT"/*.dylib; do
   file "$dylib" | grep -q arm64 || { echo "error: $dylib not arm64" >&2; exit 1; }

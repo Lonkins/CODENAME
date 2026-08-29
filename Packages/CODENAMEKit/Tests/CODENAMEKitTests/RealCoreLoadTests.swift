@@ -9,7 +9,9 @@ private let realCoreDir = ProcessInfo.processInfo.environment["REAL_CORE_DIR"]
 
 @Suite(.enabled(if: realCoreDir != nil))
 struct RealCoreLoadTests {
-  @Test(arguments: ["genesis_plus_gx_libretro.dylib", "snes9x_libretro.dylib"])
+  @Test(arguments: [
+    "genesis_plus_gx_libretro.dylib", "snes9x_libretro.dylib", "mgba_libretro.dylib",
+  ])
   func upstreamCorePassesLoader(_ name: String) throws {
     let directory = URL(fileURLWithPath: realCoreDir ?? "/nonexistent", isDirectory: true)
     let policy = CoreTrustPolicy(allowedDirectory: directory)
