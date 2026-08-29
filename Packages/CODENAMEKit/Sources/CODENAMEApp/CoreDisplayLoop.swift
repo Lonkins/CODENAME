@@ -11,6 +11,8 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
   private let coreURL: URL
   private var session: CoreSession?
   private var presenter: MetalPresenter?
+  private var audioRing: SPSCRingBuffer?
+  private var audioOutput: CoreAudioOutput?
   private var vblanksPerFrame = 1
   private var vblankCount = 0
 
@@ -51,6 +53,19 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     }
     presenter = MetalPresenter()
 
+    if let sampleRate = session?.avInfo?.audioSampleRate, sampleRate > 0 {
+      // ~93ms of stereo at 44.1k; rate control holds it near half full.
+      let ring = SPSCRingBuffer(capacity: 16384)
+      let output = CoreAudioOutput(ring: ring, sourceRate: sampleRate)
+      do {
+        try output.start()
+        audioRing = ring
+        audioOutput = output
+      } catch {
+        NSLog("audio start failed: \(error)")
+      }
+    }
+
     if let fps = session?.avInfo?.framesPerSecond {
       let refresh = 60.0  // ponytail: fixed assumption; query the display when pacing polish lands.
       if case .videoMaster(let vblanks) = FramePacer.mode(coreFPS: fps, displayRefresh: refresh) {
@@ -69,7 +84,11 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     vblankCount += 1
     if vblankCount % vblanksPerFrame == 0 {
       session.run(frames: 1)
-      _ = session.drainAudioSamples()  // audio engine lands next; bound memory meanwhile
+      let samples = session.drainAudioSamples()
+      if let audioRing, let audioOutput {
+        _ = audioRing.write(samples)  // overruns drop the newest; rate control prevents them
+        audioOutput.updateRateControl()
+      }
     }
 
     guard let frame = session.latestFrame, let aspect = session.avInfo?.aspectRatio else { return }
