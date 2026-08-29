@@ -1,6 +1,9 @@
 import CODENAMEKit
+import CoreGraphics
 import CryptoKit
 import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 
 // Conformance check as a plain executable so it runs on toolchains without
 // the swift-testing runtime. Content paths come from arguments only.
@@ -15,6 +18,7 @@ var core: String?
 var content: String?
 var frames = 300
 var expectedHash: String?
+var dumpPath: String?
 
 var arguments = Array(CommandLine.arguments.dropFirst()).makeIterator()
 while let flag = arguments.next() {
@@ -23,6 +27,7 @@ while let flag = arguments.next() {
   case "--content": content = arguments.next()
   case "--frames": frames = arguments.next().flatMap(Int.init) ?? frames
   case "--expected-hash": expectedHash = arguments.next()
+  case "--dump-frame": dumpPath = arguments.next()
   default: fail("unknown argument \(flag)")
   }
 }
@@ -33,6 +38,28 @@ guard let core, let content else {
 
 func hash(_ frame: CoreSession.VideoFrame) -> String {
   SHA256.hash(data: Data(frame.bytes)).map { String(format: "%02x", $0) }.joined()
+}
+
+// Framebuffer → PNG, straight from core memory: works headless, no window
+// server involved.
+func writePNG(_ frame: CoreSession.VideoFrame, to path: String) {
+  let bgra = PixelConverter.toBGRA8(
+    bytes: frame.bytes, width: frame.width, height: frame.height,
+    pitch: frame.pitch, format: frame.pixelFormat)
+  let bitmapInfo = CGBitmapInfo(
+    rawValue: CGImageAlphaInfo.noneSkipFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
+  guard let provider = CGDataProvider(data: Data(bgra) as CFData),
+    let image = CGImage(
+      width: frame.width, height: frame.height, bitsPerComponent: 8, bitsPerPixel: 32,
+      bytesPerRow: frame.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+      bitmapInfo: bitmapInfo, provider: provider, decode: nil, shouldInterpolate: false,
+      intent: .defaultIntent),
+    let destination = CGImageDestinationCreateWithURL(
+      URL(fileURLWithPath: path) as CFURL, UTType.png.identifier as CFString, 1, nil)
+  else { fail("could not encode frame PNG") }
+  CGImageDestinationAddImage(destination, image, nil)
+  guard CGImageDestinationFinalize(destination) else { fail("could not write \(path)") }
+  print("frame dumped: \(path)")
 }
 
 let coreURL = URL(fileURLWithPath: core)
@@ -55,6 +82,9 @@ do {
   guard let frame = session.latestFrame else { fail("no frame after \(frames) frames") }
   let digest = hash(frame)
   print("frames: \(frames), framebuffer sha256: \(digest)")
+  if let dumpPath {
+    writePNG(frame, to: dumpPath)
+  }
 
   let expectedSamples = Double(frames) * av.audioSampleRate / av.framesPerSecond * 2
   let audioRatio = Double(audioSamples) / expectedSamples
