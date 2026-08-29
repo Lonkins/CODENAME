@@ -19,6 +19,8 @@ public struct ScannedGame: Equatable, Sendable {
 public enum LibraryScanner {
   public static func scan(root: URL, extensions: Set<String>) -> [ScannedGame] {
     let keys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey]
+    // Canonicalize so relative paths survive /var → /private/var and friends.
+    let rootPath = root.resolvingSymlinksInPath().path
     guard
       let enumerator = FileManager.default.enumerator(
         at: root, includingPropertiesForKeys: keys,
@@ -37,10 +39,12 @@ public enum LibraryScanner {
       guard values.isRegularFile == true else { continue }
       let ext = url.pathExtension.lowercased()
       guard extensions.contains(ext) else { continue }
-      let relative = url.path.replacingOccurrences(of: root.path + "/", with: "")
+      // Symlinked files were skipped above, so resolving only affects ancestors.
+      let filePath = url.resolvingSymlinksInPath().path
+      guard filePath.hasPrefix(rootPath + "/") else { continue }
       games.append(
         ScannedGame(
-          relativePath: relative,
+          relativePath: String(filePath.dropFirst(rootPath.count + 1)),
           displayName: url.deletingPathExtension().lastPathComponent,
           ext: ext))
     }
