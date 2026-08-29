@@ -25,3 +25,10 @@ jobs:
         run: swift test --package-path Packages/CODENAMEKit
       - name: Lint
         run: swift format lint --strict --recursive Packages
+      - name: Assemble app bundle (ad-hoc signed)
+        run: ./Scripts/make-app.sh
+      - name: Upload app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CODENAME-app-adhoc
+          path: build/CODENAME.app
