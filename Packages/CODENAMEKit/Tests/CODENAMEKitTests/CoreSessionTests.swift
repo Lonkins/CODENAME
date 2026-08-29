@@ -71,6 +71,20 @@ struct CoreSessionTests {
     #expect(frame.bytes[0] == 6 && frame.bytes[1] == 0)
   }
 
+  @Test func drainReturnsAndClearsAudio() throws {
+    let session = try makeSession()
+    defer { session.shutdown() }
+    try session.loadGame(path: nil)
+
+    session.run(frames: 2)
+    let drained = session.drainAudioSamples()
+    #expect(drained.count == 2 * 735 * 2)
+    #expect(session.drainAudioSamples().isEmpty)
+
+    session.run(frames: 1)
+    #expect(session.drainAudioSamples().count == 735 * 2)
+  }
+
   @Test func rejectsHardwareRenderCores() throws {
     setenv("TEST_CORE_REQUEST_HW", "1", 1)
     defer { unsetenv("TEST_CORE_REQUEST_HW") }

@@ -12,7 +12,9 @@ IDENTITY="${CODESIGN_IDENTITY:--}"
 APP="build/CODENAME.app"
 
 swift build --package-path Packages/CODENAMEKit -c "$CONFIG" --product CODENAMEApp
-BIN="$(swift build --package-path Packages/CODENAMEKit -c "$CONFIG" --show-bin-path)/CODENAMEApp"
+swift build --package-path Packages/CODENAMEKit -c "$CONFIG" --product TestCore
+BUILD_DIR="$(swift build --package-path Packages/CODENAMEKit -c "$CONFIG" --show-bin-path)"
+BIN="$BUILD_DIR/CODENAMEApp"
 
 file "$BIN" | grep -q "arm64" || { echo "error: binary is not arm64" >&2; exit 1; }
 file "$BIN" | grep -qv "universal" || { echo "error: universal binary produced" >&2; exit 1; }
@@ -21,9 +23,11 @@ SPARKLE_FRAMEWORK="Packages/CODENAMEKit/.build/artifacts/sparkle/Sparkle/Sparkle
 [ -d "$SPARKLE_FRAMEWORK" ] || { echo "error: Sparkle.framework artifact missing" >&2; exit 1; }
 
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/PlugIns"
 cp "$BIN" "$APP/Contents/MacOS/CODENAME"
 cp -R "$SPARKLE_FRAMEWORK" "$APP/Contents/Frameworks/"
+# Development core until curated cores land (ADR 0001).
+cp "$BUILD_DIR/libTestCore.dylib" "$APP/Contents/PlugIns/"
 lipo -thin arm64 "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle" \
   -output "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle"
 sed -e "s/__VERSION__/$VERSION/g" -e "s/__BUILD__/$BUILD/g" App/Info.plist > "$APP/Contents/Info.plist"
@@ -35,7 +39,8 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 RUNTIME_OPTS=""
 if [ "$IDENTITY" != "-" ]; then RUNTIME_OPTS="--options runtime"; fi
 
-# Sign inside-out: Sparkle's nested services, the framework, then the app.
+# Sign inside-out: plug-ins and Sparkle's nested services, the framework, then the app.
+codesign --force $RUNTIME_OPTS --sign "$IDENTITY" "$APP/Contents/PlugIns/libTestCore.dylib"
 FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
 for NESTED in \
   "$FRAMEWORK/Versions/B/XPCServices/Downloader.xpc" \

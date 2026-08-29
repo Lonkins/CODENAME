@@ -98,6 +98,14 @@ public final class CoreSession {
     }
   }
 
+  /// Returns accumulated samples and clears the buffer (bounds session memory;
+  /// the caller feeds them into the audio ring).
+  public func drainAudioSamples() -> [Int16] {
+    let drained = audioSamples
+    audioSamples.removeAll(keepingCapacity: true)
+    return drained
+  }
+
   public func serialize() throws(SessionError) -> [UInt8] {
     let size = library.symbols.serializeSize()
     guard size > 0 else { throw .serializationFailed }
