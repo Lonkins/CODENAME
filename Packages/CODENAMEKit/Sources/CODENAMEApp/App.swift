@@ -4,12 +4,18 @@ import Sparkle
 
 @main
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate {
+  func menuNeedsUpdate(_ menu: NSMenu) {
+    if menu === recentsMenu { rebuildRecentsMenu() }
+  }
+
   private var libraryWindow: NSWindow?
   private var gameWindow: NSWindow?
   private var displayLoop: CoreDisplayLoop?
   private var inputController: InputController?
   private var contentAccess: ScopedAccess?
+  private let libraryModel = LibraryModel()
+  private let recentsMenu = NSMenu(title: "Open Recent")
   private lazy var catalog = CoreCatalog(
     pluginsDirectory: Bundle.main.builtInPlugInsURL ?? URL(fileURLWithPath: "/nonexistent"))
   private let updaterController = SPUStandardUpdaterController(
@@ -78,7 +84,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
       alert.runModal()
       return
     }
+    libraryModel.recordPlay(
+      path: url.path,
+      displayName: url.deletingPathExtension().lastPathComponent,
+      coreID: entry.url.deletingPathExtension().lastPathComponent,
+      bookmark: try? Bookmark.create(for: url))
     startGame(coreURL: entry.url, contentPath: url.path, contentAccess: ScopedAccess(url: url))
+  }
+
+  @objc private func openRecentAction(_ sender: NSMenuItem) {
+    guard let entry = sender.representedObject as? GameEntry else { return }
+    guard let bookmark = entry.bookmark,
+      let resolved = try? Bookmark.resolve(bookmark),
+      FileManager.default.fileExists(atPath: resolved.url.path)
+    else {
+      let alert = NSAlert()
+      alert.messageText = "“\(entry.displayName)” can’t be found"
+      alert.informativeText = "The file may have moved. Use File → Open… to locate it."
+      alert.runModal()
+      return
+    }
+    if resolved.isStale, let fresh = try? Bookmark.create(for: resolved.url) {
+      libraryModel.recordPlay(
+        path: entry.relativePath, displayName: entry.displayName,
+        coreID: entry.coreID, bookmark: fresh)
+    }
+    openContent(at: resolved.url)
+  }
+
+  private func rebuildRecentsMenu() {
+    recentsMenu.removeAllItems()
+    let recents = libraryModel.recents(limit: 10)
+    for entry in recents {
+      let item = NSMenuItem(
+        title: entry.displayName, action: #selector(openRecentAction(_:)), keyEquivalent: "")
+      item.target = self
+      item.representedObject = entry
+      recentsMenu.addItem(item)
+    }
+    if recents.isEmpty {
+      let empty = NSMenuItem(title: "No Recent Games", action: nil, keyEquivalent: "")
+      empty.isEnabled = false
+      recentsMenu.addItem(empty)
+    }
   }
 
   func startGame(coreURL: URL, contentPath: String?, contentAccess: ScopedAccess? = nil) {
@@ -201,6 +249,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
       title: "Open…", action: #selector(openGameAction(_:)), keyEquivalent: "o")
     openItem.target = self
     fileMenu.addItem(openItem)
+    let recentsItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
+    recentsMenu.delegate = self
+    recentsItem.submenu = recentsMenu
+    fileMenu.addItem(recentsItem)
 
     let gameMenu = NSMenu(title: "Game")
     let stopItem = NSMenuItem(
