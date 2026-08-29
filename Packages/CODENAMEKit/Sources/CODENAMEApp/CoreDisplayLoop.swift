@@ -25,6 +25,7 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
   private var activity: NSObjectProtocol?
   private var coreThreadShouldRun = true  // flipped on the core thread itself, in teardown
   private let saveStore = SaveRAMStore()
+  private let stateStore = SaveStateStore()
   private var saveIdentity: (core: String, content: String)?
   private var lastFlushedSaveRAM: [UInt8]?
   private var framesSinceFlush = 0
@@ -80,6 +81,51 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     coreThreadShouldRun = false
     NSLog("session stopped after %d vblank callbacks", vblankCount)
     CFRunLoopStop(CFRunLoopGetCurrent())
+  }
+
+  /// Main-thread entry points; work hops to the core thread asynchronously.
+  func requestSaveState(slot: Int) {
+    guard let thread, thread.isExecuting else { return }
+    perform(
+      #selector(performSaveState(_:)), on: thread, with: NSNumber(value: slot),
+      waitUntilDone: false)
+  }
+
+  func requestLoadState(slot: Int) {
+    guard let thread, thread.isExecuting else { return }
+    perform(
+      #selector(performLoadState(_:)), on: thread, with: NSNumber(value: slot),
+      waitUntilDone: false)
+  }
+
+  @objc private func performSaveState(_ slot: NSNumber) {
+    guard let saveIdentity, let session else { return }
+    do {
+      let snapshot = try session.serialize()
+      try stateStore.save(
+        snapshot, coreName: saveIdentity.core, contentName: saveIdentity.content,
+        slot: slot.intValue)
+      NSLog("state saved to slot %d (%d bytes)", slot.intValue, snapshot.count)
+    } catch {
+      NSLog("state save failed: \(error)")
+    }
+  }
+
+  @objc private func performLoadState(_ slot: NSNumber) {
+    guard let saveIdentity, let session else { return }
+    guard
+      let bytes = stateStore.load(
+        coreName: saveIdentity.core, contentName: saveIdentity.content, slot: slot.intValue)
+    else {
+      NSLog("state slot %d is empty", slot.intValue)
+      return
+    }
+    do {
+      try session.unserialize(bytes)
+      NSLog("state loaded from slot %d", slot.intValue)
+    } catch {
+      NSLog("state load failed: \(error)")
+    }
   }
 
   private func flushSaveRAM() {
