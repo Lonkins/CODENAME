@@ -1,0 +1,27 @@
+name: Cores
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "Scripts/build-cores.sh"
+      - ".github/workflows/cores.yml"
+
+jobs:
+  build-cores:
+    name: Build pinned cores (arm64)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build cores from pinned commits
+        run: ./Scripts/build-cores.sh
+      - name: Verify cores load through the host
+        run: |
+          swift build --package-path Packages/CODENAMEKit
+          REAL_CORE_DIR="$PWD/build/cores" swift test --package-path Packages/CODENAMEKit \
+            --filter RealCoreLoadTests
+      - name: Upload core artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cores-arm64
+          path: build/cores/*.dylib
