@@ -1,6 +1,7 @@
 import AppKit
 import CODENAMEKit
 import Sparkle
+import SwiftUI
 
 @main
 @MainActor
@@ -10,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
   }
 
   private var libraryWindow: NSWindow?
+  private var settingsWindow: NSWindow?
   private var gameWindow: NSWindow?
   private var displayLoop: CoreDisplayLoop?
   private var inputController: InputController?
@@ -224,6 +226,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     libraryWindow = window
   }
 
+  @objc private func showSettingsAction(_ sender: Any?) {
+    if let settingsWindow {
+      settingsWindow.makeKeyAndOrderFront(nil)
+      return
+    }
+    let window = NSWindow(
+      contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
+    window.title = "Settings"
+    window.isReleasedWhenClosed = false
+    window.contentView = NSHostingView(rootView: SettingsView(licences: loadCoreLicences()))
+    window.center()
+    window.makeKeyAndOrderFront(nil)
+    settingsWindow = window
+  }
+
+  private func loadCoreLicences() -> [(name: String, text: String)] {
+    guard let resources = Bundle.main.resourceURL else { return [] }
+    let directory = resources.appendingPathComponent("CoreLicences", isDirectory: true)
+    let files =
+      (try? FileManager.default.contentsOfDirectory(
+        at: directory, includingPropertiesForKeys: nil)) ?? []
+    return files.sorted { $0.lastPathComponent < $1.lastPathComponent }.compactMap { url in
+      guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+      return (name: url.deletingPathExtension().lastPathComponent, text: text)
+    }
+  }
+
   private func bundledTestCoreURL() -> URL? {
     guard let plugins = Bundle.main.builtInPlugInsURL else { return nil }
     let testCore = plugins.appendingPathComponent("libTestCore.dylib")
@@ -241,6 +270,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     appMenu.addItem(
       withTitle: "About CODENAME",
       action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+    appMenu.addItem(.separator())
+    let settingsItem = NSMenuItem(
+      title: "Settings…", action: #selector(showSettingsAction(_:)), keyEquivalent: ",")
+    settingsItem.target = self
+    appMenu.addItem(settingsItem)
     appMenu.addItem(.separator())
     let updateItem = NSMenuItem(
       title: "Check for Updates…",

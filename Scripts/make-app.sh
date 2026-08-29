@@ -23,7 +23,10 @@ SPARKLE_FRAMEWORK="Packages/CODENAMEKit/.build/artifacts/sparkle/Sparkle/Sparkle
 [ -d "$SPARKLE_FRAMEWORK" ] || { echo "error: Sparkle.framework artifact missing" >&2; exit 1; }
 
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/PlugIns"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/PlugIns" \
+  "$APP/Contents/Resources"
+# Licence texts for bundled cores (distributor obligation, ADR 0001).
+cp -R App/CoreLicences "$APP/Contents/Resources/"
 cp "$BIN" "$APP/Contents/MacOS/CODENAME"
 cp -R "$SPARKLE_FRAMEWORK" "$APP/Contents/Frameworks/"
 # Development core until curated cores land (ADR 0001).

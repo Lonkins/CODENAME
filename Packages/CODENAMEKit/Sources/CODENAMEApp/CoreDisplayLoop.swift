@@ -237,9 +237,10 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
 
     guard let frame = session.latestFrame, let aspect = session.avInfo?.aspectRatio else { return }
     let texture = update.drawable.texture
+    let integerOnly = UserDefaults.standard.object(forKey: "integerScale") as? Bool ?? true
     let destination = IntegerScaler.destinationRect(
       contentWidth: frame.width, contentHeight: frame.height, aspectRatio: aspect,
-      drawableWidth: texture.width, drawableHeight: texture.height, integerOnly: true)
+      drawableWidth: texture.width, drawableHeight: texture.height, integerOnly: integerOnly)
     do {
       try presenter.render(
         frame: frame, into: texture, destination: destination, presenting: update.drawable)
