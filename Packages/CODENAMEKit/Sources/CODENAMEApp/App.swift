@@ -290,6 +290,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
   }
 
+  @objc private func addCoreAction(_ sender: Any?) {
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = true
+    panel.canChooseDirectories = false
+    panel.allowsMultipleSelection = false
+    panel.message = "Choose a libretro core (.dylib)"
+    panel.begin { [weak self] response in
+      guard let self, response == .OK, let url = panel.url else { return }
+      guard url.pathExtension == "dylib" else { return }
+      let plugins = Bundle.main.builtInPlugInsURL ?? URL(fileURLWithPath: "/nonexistent")
+      let origin = CoreRouting.origin(of: url, bundledPlugInsDirectory: plugins)
+      guard CoreRouting.requiresHelper(origin) else {
+        self.alert("This core is already bundled with the app.")
+        return
+      }
+      // ADR 0001: unauthenticated cores never load in this process — the
+      // helper alone dlopens them.
+      let access = ScopedAccess(url: url)
+      let connection = NSXPCConnection(serviceName: "dev.CODENAME.CoreHost")
+      connection.remoteObjectInterface = CoreHostWire.interface()
+      connection.resume()
+      let proxy = connection.remoteObjectProxyWithErrorHandler { [weak self] _ in
+        DispatchQueue.main.async {
+          self?.alert(
+            "This build can’t run user-supplied cores: the isolation helper is unavailable.")
+        }
+      }
+      (proxy as? CoreHostProtocol)?.probeCore(path: url.path) { [weak self] ok, name in
+        DispatchQueue.main.async {
+          _ = access
+          connection.invalidate()
+          if ok {
+            self?.alert(
+              "“\(name)” verified in the isolated helper. "
+                + "Playing user-supplied cores through the helper arrives in a future update.")
+          } else {
+            self?.alert("The isolation helper could not load this file as a libretro core.")
+          }
+        }
+      }
+    }
+  }
+
+  private func alert(_ message: String) {
+    let alert = NSAlert()
+    alert.messageText = message
+    alert.runModal()
+  }
+
   @objc private func importArtworkAction(_ sender: Any?) {
     let panel = NSOpenPanel()
     panel.canChooseFiles = false
@@ -472,6 +521,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
       title: "Add Folder…", action: #selector(addFolderAction(_:)), keyEquivalent: "O")
     addFolderItem.target = self
     fileMenu.addItem(addFolderItem)
+    let addCoreItem = NSMenuItem(
+      title: "Add Core…", action: #selector(addCoreAction(_:)), keyEquivalent: "")
+    addCoreItem.target = self
+    fileMenu.addItem(addCoreItem)
 
     let gameMenu = NSMenu(title: "Game")
     for slot in 1...3 {
