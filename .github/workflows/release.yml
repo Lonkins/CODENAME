@@ -54,6 +54,17 @@ jobs:
       - name: Build curated cores
         run: ./Scripts/build-cores.sh
 
+      - name: Package corresponding source for GPL cores
+        # ADR 0001/0007: any GPL/LGPL core we distribute ships its exact
+        # pinned source (plus the build script that produced it) as an
+        # artifact of the same release.
+        run: |
+          SHA=$(git -C build/cores-src/beetle-psx rev-parse HEAD)
+          git -C build/cores-src/beetle-psx archive --format=tar.gz \
+            --prefix="beetle-psx-libretro-$SHA/" \
+            -o "$PWD/build/beetle-psx-source-$SHA.tar.gz" HEAD
+          cp Scripts/build-cores.sh build/build-cores-used-for-this-release.sh
+
       - name: Build release artifact
         run: |
           VERSION="${GITHUB_REF_NAME#v}" BUILD="${{ github.run_number }}" ./Scripts/make-release.sh
@@ -66,10 +77,12 @@ jobs:
           if [ "$HAVE_SIGNING" = "true" ]; then
             gh release create "$GITHUB_REF_NAME" \
               "build/CODENAME-$VERSION.dmg" "build/CODENAME-$VERSION.dmg.sha256" \
+              build/beetle-psx-source-*.tar.gz build/build-cores-used-for-this-release.sh \
               --title "CODENAME $VERSION" --generate-notes
           else
             gh release create "$GITHUB_REF_NAME" \
               "build/CODENAME-$VERSION.dmg" "build/CODENAME-$VERSION.dmg.sha256" \
+              build/beetle-psx-source-*.tar.gz build/build-cores-used-for-this-release.sh \
               --prerelease --title "CODENAME $VERSION (unsigned dry run)" \
               --notes "Dry-run build produced without signing secrets. Ad-hoc signed, not notarized, will not pass Gatekeeper. For pipeline verification only."
           fi

@@ -15,7 +15,10 @@ public struct CoreTrustPolicy: Sendable {
   public func validate(_ url: URL) throws(LoadError) {
     let canonical = url.resolvingSymlinksInPath().standardizedFileURL
     let allowed = allowedDirectory.resolvingSymlinksInPath().standardizedFileURL
-    let inside = canonical.pathComponents.starts(with: allowed.pathComponents)
+    // Direct containment only: subdirectories are refused so that placement
+    // (PlugIns/HelperOnly/, ADR 0007) is a mechanical guarantee, not a
+    // convention — helper-only cores can never dlopen in the app process.
+    let inside = canonical.deletingLastPathComponent().pathComponents == allowed.pathComponents
     guard inside else { throw .outsideAllowedDirectory(url.path) }
 
     if let requiredTeamID {

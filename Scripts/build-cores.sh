@@ -11,10 +11,16 @@ SNES9X_REPO="https://github.com/libretro/snes9x"
 SNES9X_SHA="890b5d445538fe790aa3add3d5702c80f551e0ae"
 MGBA_REPO="https://github.com/libretro/mgba"
 MGBA_SHA="e31759b24e7a4e3899285ff720d7b573ac328ae7"
+BEETLE_PSX_REPO="https://github.com/libretro/beetle-psx-libretro"
+BEETLE_PSX_SHA="ef51860dbd71ad6b7ce67115d4780c2ee321d968"
 
 WORK="build/cores-src"
 OUT="build/cores"
-mkdir -p "$WORK" "$OUT"
+# GPL cores are helper-only (ADR 0007): they land in a subdirectory that the
+# app-process trust policy refuses by construction, and ship with
+# corresponding source as a release artifact (ADR 0001).
+HELPER_ONLY_OUT="$OUT/helper-only"
+mkdir -p "$WORK" "$OUT" "$HELPER_ONLY_OUT"
 
 fetch() { # $1 repo url, $2 sha, $3 dir
   if [ ! -d "$3/.git" ]; then
@@ -46,7 +52,12 @@ else
   echo "cmake not found; skipping mgba (CI builds it)" >&2
 fi
 
-for dylib in "$OUT"/*.dylib; do
+echo "building beetle-psx @ ${BEETLE_PSX_SHA:0:7}"
+fetch "$BEETLE_PSX_REPO" "$BEETLE_PSX_SHA" "$WORK/beetle-psx"
+make -C "$WORK/beetle-psx" -j"$(sysctl -n hw.ncpu)" >/dev/null
+cp "$WORK/beetle-psx/mednafen_psx_libretro.dylib" "$HELPER_ONLY_OUT/"
+
+for dylib in "$OUT"/*.dylib "$HELPER_ONLY_OUT"/*.dylib; do
   file "$dylib" | grep -q arm64 || { echo "error: $dylib not arm64" >&2; exit 1; }
 done
 ls -la "$OUT"
