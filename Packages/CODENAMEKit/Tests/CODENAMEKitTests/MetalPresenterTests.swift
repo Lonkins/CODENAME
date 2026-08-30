@@ -1,3 +1,4 @@
+import IOSurface
 import Metal
 import Testing
 
@@ -46,6 +47,41 @@ struct MetalPresenterTests {
     #expect(pixel(of: target, x: 32, y: 24) == [0, 0, 255, 255])
     #expect(pixel(of: target, x: 2, y: 24) == [0, 0, 0, 255])
     #expect(pixel(of: target, x: 62, y: 24) == [0, 0, 0, 255])
+  }
+
+  @Test func rendersFrameRegionOfMaxSizedSurface() throws {
+    // Helper path: a 4x4 surface (max geometry) holding a 2x2 green frame in
+    // its top-left corner — only that region may be sampled.
+    let presenter = try #require(MetalPresenter())
+    let target = try #require(makeTarget(presenter.device, width: 16, height: 16))
+    let surface = try #require(CoreHostWire.makeFrameSurface(width: 4, height: 4))
+
+    IOSurfaceLock(surface, [], nil)
+    let base = IOSurfaceGetBaseAddress(surface).assumingMemoryBound(to: UInt8.self)
+    let rowBytes = IOSurfaceGetBytesPerRow(surface)
+    for row in 0..<4 {
+      for column in 0..<4 {
+        let offset = row * rowBytes + column * 4
+        let inFrame = row < 2 && column < 2
+        // BGRA: green inside the frame region, white garbage outside it.
+        base[offset] = inFrame ? 0 : 255
+        base[offset + 1] = inFrame ? 255 : 255
+        base[offset + 2] = inFrame ? 0 : 255
+        base[offset + 3] = 255
+      }
+    }
+    IOSurfaceUnlock(surface, [], nil)
+
+    try presenter.render(
+      surface: surface, frameWidth: 2, frameHeight: 2, into: target,
+      destination: IntegerScaler.Rect(x: 0, y: 0, width: 16, height: 16))
+
+    // Every corner of the target must be frame green — the garbage outside
+    // the 2x2 region never appears.
+    #expect(pixel(of: target, x: 1, y: 1) == [0, 255, 0, 255])
+    #expect(pixel(of: target, x: 14, y: 1) == [0, 255, 0, 255])
+    #expect(pixel(of: target, x: 1, y: 14) == [0, 255, 0, 255])
+    #expect(pixel(of: target, x: 14, y: 14) == [0, 255, 0, 255])
   }
 
   @Test func reusesTextureAcrossSameSizeFrames() throws {
