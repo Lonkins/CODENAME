@@ -7,6 +7,39 @@ import IOSurface
 @objc public protocol CoreHostProtocol {
   func handshake(version: Int, reply: @escaping @Sendable (Int) -> Void)
   func roundTripFrame(_ surface: IOSurface, reply: @escaping @Sendable (Int, Int) -> Void)
+
+  /// Step C: the helper hosts a real core session (one per service instance).
+  /// Reply: ok, baseWidth, baseHeight, fps, audioSampleRate.
+  func openSession(
+    corePath: String, contentPath: String?, systemDirectory: String, saveDirectory: String,
+    reply: @escaping @Sendable (Bool, Int, Int, Double, Double) -> Void)
+
+  /// Runs N frames; replies with the latest frame (bytes, width, height,
+  /// pitch, pixel-format wire code) and the drained interleaved audio.
+  func runFrames(
+    _ count: Int, reply: @escaping @Sendable (Data, Int, Int, Int, Int, Data) -> Void)
+
+  func closeSession(reply: @escaping @Sendable () -> Void)
+}
+
+extension LibretroPixelFormat {
+  /// Stable wire encoding (matches RETRO_PIXEL_FORMAT raw values).
+  public var wireCode: Int {
+    switch self {
+    case .zeroRGB1555: 0
+    case .xrgb8888: 1
+    case .rgb565: 2
+    }
+  }
+
+  public init?(wireCode: Int) {
+    switch wireCode {
+    case 0: self = .zeroRGB1555
+    case 1: self = .xrgb8888
+    case 2: self = .rgb565
+    default: return nil
+    }
+  }
 }
 
 public enum CoreHostWire {
@@ -23,15 +56,71 @@ public enum CoreHostWire {
   }
 }
 
-/// Helper-side implementation. @unchecked Sendable: stateless; XPC invokes
-/// on its own queue.
+/// Helper-side implementation. @unchecked Sendable: the session and its
+/// non-Sendable state are confined to one serial queue — the helper's
+/// equivalent of the app's dedicated core thread.
 public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Sendable {
+  private let coreQueue = DispatchQueue(label: "CODENAME.CoreHost.core")
+  private var session: CoreSession?
+
   public func handshake(version: Int, reply: @escaping @Sendable (Int) -> Void) {
     reply(CoreHostWire.version)
   }
 
   public func roundTripFrame(_ surface: IOSurface, reply: @escaping @Sendable (Int, Int) -> Void) {
     reply(IOSurfaceGetWidth(surface), IOSurfaceGetHeight(surface))
+  }
+
+  public func openSession(
+    corePath: String, contentPath: String?, systemDirectory: String, saveDirectory: String,
+    reply: @escaping @Sendable (Bool, Int, Int, Double, Double) -> Void
+  ) {
+    coreQueue.async { [self] in
+      let coreURL = URL(fileURLWithPath: corePath)
+      let environment = EnvironmentHandler(
+        systemDirectory: URL(fileURLWithPath: systemDirectory),
+        saveDirectory: URL(fileURLWithPath: saveDirectory))
+      let policy = CoreTrustPolicy(allowedDirectory: coreURL.deletingLastPathComponent())
+      do {
+        let session = try CoreSession(
+          coreURL: coreURL, policy: policy, environment: environment)
+        try session.loadGame(path: contentPath)
+        self.session = session
+        let av = session.avInfo
+        reply(
+          true, av?.baseSize.width ?? 0, av?.baseSize.height ?? 0,
+          av?.framesPerSecond ?? 0, av?.audioSampleRate ?? 0)
+      } catch {
+        reply(false, 0, 0, 0, 0)
+      }
+    }
+  }
+
+  public func runFrames(
+    _ count: Int, reply: @escaping @Sendable (Data, Int, Int, Int, Int, Data) -> Void
+  ) {
+    coreQueue.async { [self] in
+      guard let session else {
+        return reply(Data(), 0, 0, 0, -1, Data())
+      }
+      session.run(frames: count)
+      let audio = session.drainAudioSamples()
+      let audioData = audio.withUnsafeBufferPointer { Data(buffer: $0) }
+      guard let frame = session.latestFrame else {
+        return reply(Data(), 0, 0, 0, -1, audioData)
+      }
+      reply(
+        Data(frame.bytes), frame.width, frame.height, frame.pitch,
+        frame.pixelFormat.wireCode, audioData)
+    }
+  }
+
+  public func closeSession(reply: @escaping @Sendable () -> Void) {
+    coreQueue.async { [self] in
+      session?.shutdown()
+      session = nil
+      reply()
+    }
   }
 }
 
