@@ -46,6 +46,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
       startGame(
         coreURL: URL(fileURLWithPath: core),
         contentPath: ProcessInfo.processInfo.environment["CODENAME_CONTENT"])
+    } else if let content = ProcessInfo.processInfo.environment["CODENAME_OPEN_CONTENT"] {
+      // Dev-only: drive the full catalog-routed open path headlessly —
+      // BIOS gate, helper routing and all.
+      openContent(at: URL(fileURLWithPath: content))
     } else if let bundled = bundledTestCoreURL() {
       startGame(coreURL: bundled, contentPath: nil)
     }
