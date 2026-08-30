@@ -17,7 +17,7 @@ private let ps1Content = ProcessInfo.processInfo.environment["PS1_CONTENT_PATH"]
 
 @Suite(.serialized, .enabled(if: ps1Core != nil && ps1BIOSDir != nil && ps1Content != nil))
 struct PSXConformanceTests {
-  @Test func bootsDiscThroughHelperWithStagedBIOS() async throws {
+  @Test func bootsDiscThroughHelperWithStagedBIOS() throws {
     // Stage the user's BIOS images by digest into a fresh system dir —
     // the same machinery the app uses.
     let system = FileManager.default.temporaryDirectory
