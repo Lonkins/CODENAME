@@ -19,6 +19,7 @@ var content: String?
 var frames = 300
 var expectedHash: String?
 var dumpPath: String?
+var useHelper = false
 
 var arguments = Array(CommandLine.arguments.dropFirst()).makeIterator()
 while let flag = arguments.next() {
@@ -28,6 +29,7 @@ while let flag = arguments.next() {
   case "--frames": frames = arguments.next().flatMap(Int.init) ?? frames
   case "--expected-hash": expectedHash = arguments.next()
   case "--dump-frame": dumpPath = arguments.next()
+  case "--helper": useHelper = true
   default: fail("unknown argument \(flag)")
   }
 }
@@ -67,6 +69,86 @@ let environment = EnvironmentHandler(
   systemDirectory: FileManager.default.temporaryDirectory,
   saveDirectory: FileManager.default.temporaryDirectory)
 let policy = CoreTrustPolicy(allowedDirectory: coreURL.deletingLastPathComponent())
+
+// --helper: the same battery through the XPC serialization path (loopback
+// host — full NSXPCConnection machinery, no launchd needed in a bare tool).
+func runViaHelper(coreURL: URL, content: String, frames: Int, expectedHash: String?) {
+  let host = LoopbackCoreHost()
+  guard let proxy = host.proxy(errorHandler: { fail("xpc error: \($0.localizedDescription)") })
+  else { fail("no helper proxy") }
+
+  func waitFrames(_ count: Int) -> (bytes: Data, wireCode: Int, audio: Data) {
+    let semaphore = DispatchSemaphore(value: 0)
+    nonisolated(unsafe) var result: (Data, Int, Data) = (Data(), -1, Data())
+    proxy.runFrames(count) { bytes, _, _, _, code, audio in
+      result = (bytes, code, audio)
+      semaphore.signal()
+    }
+    semaphore.wait()
+    return result
+  }
+
+  let openSemaphore = DispatchSemaphore(value: 0)
+  nonisolated(unsafe) var av: (ok: Bool, fps: Double, rate: Double) = (false, 0, 0)
+  proxy.openSession(
+    corePath: coreURL.path, contentPath: content,
+    systemDirectory: FileManager.default.temporaryDirectory.path,
+    saveDirectory: FileManager.default.temporaryDirectory.path
+  ) { ok, _, _, fps, rate in
+    av = (ok, fps, rate)
+    openSemaphore.signal()
+  }
+  openSemaphore.wait()
+  guard av.ok else { fail("helper failed to open session") }
+  print("helper session: \(av.fps)fps, \(av.rate)Hz")
+
+  let main = waitFrames(frames)
+  let digest = SHA256.hash(data: main.bytes).map { String(format: "%02x", $0) }.joined()
+  print("helper frames: \(frames), framebuffer sha256: \(digest)")
+  let audioSamples = main.audio.count / MemoryLayout<Int16>.size
+  let expectedSamples = Double(frames) * av.rate / av.fps * 2
+  let ratio = Double(audioSamples) / expectedSamples
+  print("helper audio: \(audioSamples) samples (\(String(format: "%.3f", ratio))x expected)")
+  guard ratio > 0.9, ratio < 1.1 else { fail("helper audio count off by >10%") }
+
+  let stateSemaphore = DispatchSemaphore(value: 0)
+  nonisolated(unsafe) var snapshot = Data()
+  proxy.serializeState { data in
+    snapshot = data
+    stateSemaphore.signal()
+  }
+  stateSemaphore.wait()
+  guard !snapshot.isEmpty else { fail("helper serialize returned empty") }
+
+  let firstHash = SHA256.hash(data: waitFrames(30).bytes)
+    .map { String(format: "%02x", $0) }.joined()
+  let restoreSemaphore = DispatchSemaphore(value: 0)
+  nonisolated(unsafe) var restored = false
+  proxy.unserializeState(snapshot) { ok in
+    restored = ok
+    restoreSemaphore.signal()
+  }
+  restoreSemaphore.wait()
+  guard restored else { fail("helper unserialize failed") }
+  let replayHash = SHA256.hash(data: waitFrames(30).bytes)
+    .map { String(format: "%02x", $0) }.joined()
+  guard replayHash == firstHash else { fail("helper save-state round trip diverged") }
+  print("helper save-state: round trip deterministic over 30 frames")
+
+  if let expectedHash {
+    guard digest == expectedHash else { fail("helper hash mismatch: expected \(expectedHash)") }
+    print("helper hash: matches expected")
+  }
+  print("PASS (helper)")
+  let closeSemaphore = DispatchSemaphore(value: 0)
+  proxy.closeSession { closeSemaphore.signal() }
+  closeSemaphore.wait()
+}
+
+if useHelper {
+  runViaHelper(coreURL: coreURL, content: content, frames: frames, expectedHash: expectedHash)
+  exit(0)
+}
 
 do {
   let session = try CoreSession(coreURL: coreURL, policy: policy, environment: environment)

@@ -21,6 +21,11 @@ import IOSurface
 
   func closeSession(reply: @escaping @Sendable () -> Void)
 
+  /// Save-state round trip across the boundary (owned bytes, per the
+  /// transport contract).
+  func serializeState(reply: @escaping @Sendable (Data) -> Void)
+  func unserializeState(_ state: Data, reply: @escaping @Sendable (Bool) -> Void)
+
   /// C2 transport: the app attaches a BGRA IOSurface once; runFramesShared
   /// fills it (converted, tightly row-copied) instead of shipping bytes.
   /// Audio remains message-based until profiling demands shared memory.
@@ -142,6 +147,20 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
       session = nil
       frameSurface = nil
       reply()
+    }
+  }
+
+  public func serializeState(reply: @escaping @Sendable (Data) -> Void) {
+    coreQueue.async { [self] in
+      let bytes = (try? session?.serialize()) ?? []
+      reply(Data(bytes))
+    }
+  }
+
+  public func unserializeState(_ state: Data, reply: @escaping @Sendable (Bool) -> Void) {
+    coreQueue.async { [self] in
+      guard let session else { return reply(false) }
+      reply((try? session.unserialize([UInt8](state))) != nil)
     }
   }
 
