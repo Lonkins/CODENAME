@@ -10,13 +10,12 @@ import IOSurface
   func roundTripFrame(_ surface: IOSurface, reply: @escaping @Sendable (Int, Int) -> Void)
 
   /// Step C: the helper hosts a real core session (one per service instance).
-  /// Reply: ok, baseWidth, baseHeight, fps, audioSampleRate.
-  /// Reply: ok, base width/height, max width/height, fps, audio rate. The
-  /// shared IOSurface must be sized from MAX geometry — cores switch video
-  /// modes mid-session (v2).
+  /// Reply: ok, base width/height, max width/height, aspect ratio, fps,
+  /// audio rate. The shared IOSurface must be sized from MAX geometry —
+  /// cores switch video modes mid-session (v2).
   func openSession(
     corePath: String, contentPath: String?, systemDirectory: String, saveDirectory: String,
-    reply: @escaping @Sendable (Bool, Int, Int, Int, Int, Double, Double) -> Void)
+    reply: @escaping @Sendable (Bool, Int, Int, Int, Int, Double, Double, Double) -> Void)
 
   /// Runs N frames; replies with the latest frame (bytes, width, height,
   /// pitch, pixel-format wire code) and the drained interleaved audio.
@@ -114,7 +113,7 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
 
   public func openSession(
     corePath: String, contentPath: String?, systemDirectory: String, saveDirectory: String,
-    reply: @escaping @Sendable (Bool, Int, Int, Int, Int, Double, Double) -> Void
+    reply: @escaping @Sendable (Bool, Int, Int, Int, Int, Double, Double, Double) -> Void
   ) {
     coreQueue.async { [self] in
       let coreURL = URL(fileURLWithPath: corePath)
@@ -131,9 +130,9 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
         reply(
           true, av?.baseSize.width ?? 0, av?.baseSize.height ?? 0,
           av?.maxSize.width ?? 0, av?.maxSize.height ?? 0,
-          av?.framesPerSecond ?? 0, av?.audioSampleRate ?? 0)
+          av?.aspectRatio ?? 0, av?.framesPerSecond ?? 0, av?.audioSampleRate ?? 0)
       } catch {
-        reply(false, 0, 0, 0, 0, 0, 0)
+        reply(false, 0, 0, 0, 0, 0, 0, 0)
       }
     }
   }

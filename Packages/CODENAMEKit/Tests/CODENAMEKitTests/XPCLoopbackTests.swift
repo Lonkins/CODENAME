@@ -87,9 +87,10 @@ struct XPCSessionParityTests {
         corePath: coreURL.path, contentPath: nil,
         systemDirectory: FileManager.default.temporaryDirectory.path,
         saveDirectory: FileManager.default.temporaryDirectory.path
-      ) { ok, width, height, maxWidth, maxHeight, _, _ in
+      ) { ok, width, height, maxWidth, maxHeight, aspect, _, _ in
         continuation.resume(
-          returning: ok && width == 320 && height == 240 && maxWidth == 320 && maxHeight == 240)
+          returning: ok && width == 320 && height == 240 && maxWidth == 320 && maxHeight == 240
+            && aspect > 0)
       }
     }
     #expect(opened)
@@ -122,7 +123,7 @@ struct XPCSessionParityTests {
         corePath: coreURL.path, contentPath: nil,
         systemDirectory: FileManager.default.temporaryDirectory.path,
         saveDirectory: FileManager.default.temporaryDirectory.path
-      ) { ok, _, _, _, _, _, _ in continuation.resume(returning: ok) }
+      ) { ok, _, _, _, _, _, _, _ in continuation.resume(returning: ok) }
     }
     #expect(opened)
 
@@ -168,7 +169,7 @@ struct XPCSessionParityTests {
         corePath: coreURL.path, contentPath: nil,
         systemDirectory: FileManager.default.temporaryDirectory.path,
         saveDirectory: FileManager.default.temporaryDirectory.path
-      ) { ok, _, _, _, _, _, _ in continuation.resume(returning: ok) }
+      ) { ok, _, _, _, _, _, _, _ in continuation.resume(returning: ok) }
     }
     #expect(opened)
     _ = await withCheckedContinuation { continuation in
@@ -187,15 +188,17 @@ struct XPCSessionParityTests {
     // TestCore echoes the B button into pixel 1; press B via the v2 mask
     // and read it back out of the shared surface after conversion.
     let host = LoopbackCoreHost()
-    let proxy = try #require(host.proxy(errorHandler: { _ in }))
-    let surface = try #require(CoreHostWire.makeFrameSurface(width: 320, height: 240))
+    let maybeProxy = host.proxy(errorHandler: { _ in })
+    let proxy = try #require(maybeProxy)
+    let maybeSurface = CoreHostWire.makeFrameSurface(width: 320, height: 240)
+    let surface = try #require(maybeSurface)
 
     let opened: Bool = await withCheckedContinuation { continuation in
       proxy.openSession(
         corePath: coreURL.path, contentPath: nil,
         systemDirectory: FileManager.default.temporaryDirectory.path,
         saveDirectory: FileManager.default.temporaryDirectory.path
-      ) { ok, _, _, _, _, _, _ in continuation.resume(returning: ok) }
+      ) { ok, _, _, _, _, _, _, _ in continuation.resume(returning: ok) }
     }
     #expect(opened)
     _ = await withCheckedContinuation { continuation in
@@ -227,14 +230,15 @@ struct XPCSessionParityTests {
     // TestCore stamps sram[0] with the frame counter; snapshot it, mutate
     // the copy, restore, and the next snapshot must return the mutation.
     let host = LoopbackCoreHost()
-    let proxy = try #require(host.proxy(errorHandler: { _ in }))
+    let maybeProxy = host.proxy(errorHandler: { _ in })
+    let proxy = try #require(maybeProxy)
 
     let opened: Bool = await withCheckedContinuation { continuation in
       proxy.openSession(
         corePath: coreURL.path, contentPath: nil,
         systemDirectory: FileManager.default.temporaryDirectory.path,
         saveDirectory: FileManager.default.temporaryDirectory.path
-      ) { ok, _, _, _, _, _, _ in continuation.resume(returning: ok) }
+      ) { ok, _, _, _, _, _, _, _ in continuation.resume(returning: ok) }
     }
     #expect(opened)
 
