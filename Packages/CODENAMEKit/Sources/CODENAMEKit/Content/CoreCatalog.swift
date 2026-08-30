@@ -47,20 +47,23 @@ public struct CoreCatalog {
         return Entry(
           url: url, name: String(cString: namePointer), extensions: extensions,
           needsFullPath: info.need_fullpath, requiresHelper: false)
-      } + Self.helperOnlyEntries(in: helperOnlyDirectory)
+      }
+      + Self.helperOnlyEntries(
+        dylibs: helperOnlyDirectory, sidecars: sidecarDirectory ?? helperOnlyDirectory)
   }
 
-  static func helperOnlyEntries(in directory: URL?) -> [Entry] {
-    guard let directory else { return [] }
+  static func helperOnlyEntries(dylibs: URL?, sidecars: URL?) -> [Entry] {
+    guard let dylibs, let sidecars else { return [] }
     let listing =
       (try? FileManager.default.contentsOfDirectory(
-        at: directory, includingPropertiesForKeys: nil)) ?? []
+        at: sidecars, includingPropertiesForKeys: nil)) ?? []
     return
       listing
       .filter { $0.pathExtension == "info" }
       .sorted { $0.lastPathComponent < $1.lastPathComponent }
       .compactMap { infoURL in
-        let dylibURL = infoURL.deletingPathExtension().appendingPathExtension("dylib")
+        let dylibURL = dylibs.appendingPathComponent(
+          infoURL.deletingPathExtension().lastPathComponent + ".dylib")
         guard FileManager.default.fileExists(atPath: dylibURL.path),
           let text = try? String(contentsOf: infoURL, encoding: .utf8),
           let entry = Self.parseSidecar(text, dylibURL: dylibURL)
