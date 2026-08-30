@@ -63,22 +63,40 @@ public struct ArtworkStore {
     try? FileManager.default.removeItem(at: url(for: entryID))
   }
 
-  /// Filename (minus extension, case-insensitive) → entry displayName match.
-  /// Returns how many entries gained artwork.
+  /// Filename → entry match, case-insensitive, tolerant of catalog-style
+  /// decorations on either side: an image named like the dump ("Title, The
+  /// (USA).png") matches an entry displaying the normalized title, and vice
+  /// versa. Returns how many entries gained artwork.
   @discardableResult
   public func importMatching(folder: URL, entries: [GameEntry]) -> Int {
     let images = LibraryScanner.scan(root: folder, extensions: ["png", "jpg", "jpeg", "heic"])
-    let byName = Dictionary(
-      entries.map { ($0.displayName.lowercased(), $0.id) }, uniquingKeysWith: { first, _ in first })
+    var byKey: [String: UUID] = [:]
+    for entry in entries {
+      let rawBase = (entry.relativePath as NSString).lastPathComponent
+      for key in Self.matchKeys(rawBase.isEmpty ? entry.displayName : rawBase)
+        + Self.matchKeys(entry.displayName)
+      {
+        byKey[key] = byKey[key] ?? entry.id
+      }
+    }
     var imported = 0
     for image in images {
-      guard let entryID = byName[image.displayName.lowercased()] else { continue }
+      guard let entryID = Self.matchKeys(image.displayName).compactMap({ byKey[$0] }).first
+      else { continue }
       let sourceURL = folder.appendingPathComponent(image.relativePath)
       if (try? setArtwork(from: sourceURL, for: entryID)) != nil {
         imported += 1
       }
     }
     return imported
+  }
+
+  /// Both the literal name and its normalized title, lowercased.
+  static func matchKeys(_ filename: String) -> [String] {
+    let base = (filename as NSString).deletingPathExtension
+    let normalized = TitleNormalizer.normalize(filename: base).displayTitle.lowercased()
+    let literal = base.lowercased()
+    return normalized == literal ? [literal] : [literal, normalized]
   }
 
   private func url(for entryID: UUID) -> URL {

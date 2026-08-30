@@ -20,6 +20,12 @@ import Testing
       withDestinationURL: sub.appendingPathComponent("Mario.sfc"))
   }
 
+  @Test func displayNamesAreNormalizedTitles() throws {
+    try Data("g".utf8).write(to: root.appendingPathComponent("Zelda, The (USA) (Rev 1).sfc"))
+    let games = LibraryScanner.scan(root: root, extensions: ["sfc"])
+    #expect(games.contains { $0.displayName == "The Zelda" })
+  }
+
   @Test func cueParserExtractsQuotedFilenames() {
     let cue = """
       FILE "Game (USA) (Track 1).bin" BINARY
