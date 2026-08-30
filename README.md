@@ -15,7 +15,7 @@ Swift 6, Metal presentation, macOS 15+. Sandboxed with **zero** hardened-runtime
 
 What works today:
 
-- **Plays Mega Drive/Genesis and SNES games** via bundled, pinned-source builds of Genesis Plus GX and Snes9x — verified at correct speed with audio, input, and deterministic save states by an automated conformance harness.
+- **Plays Mega Drive/Genesis, SNES, and Game Boy / Game Boy Advance games** via bundled, pinned-source builds of Genesis Plus GX, Snes9x, and mGBA — verified at correct speed with audio, input, and deterministic save states by an automated conformance harness, with recorded golden hashes replayed both in-process and through the out-of-process core helper (`Scripts/conformance.sh`).
 - **A real Mac app experience**: File → Open with type routing, Open Recent, a folder-scanning game library, battery-save (SRAM) persistence, three save-state slots (⌘S/⌘L), integer or aspect-fit scaling, ProMotion-aware frame pacing with dynamic audio rate control.
 - **Infrastructure**: CI on arm64 runners (tests + thread sanitizer), a tag-driven release pipeline, and a [Sparkle](https://sparkle-project.org) update channel with an EdDSA-signed [appcast](https://lonkins.github.io/CODENAME/appcast.xml).
 
@@ -60,6 +60,10 @@ open build/CODENAME.app
 ```
 
 Tests and lint: `swift test --package-path Packages/CODENAMEKit` (requires Xcode toolchain) and `swift format lint --strict --recursive Packages`. Release packaging is documented in [docs/RELEASING.md](docs/RELEASING.md). A Homebrew cask stub lives in [Casks/](Casks/) pending signed releases.
+
+## Roadmap
+
+Direction and non-goals live in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Design decisions
 
