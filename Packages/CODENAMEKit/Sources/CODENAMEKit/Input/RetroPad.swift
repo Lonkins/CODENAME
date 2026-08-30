@@ -48,4 +48,12 @@ public final class InputState: Sendable {
     guard id < 32 else { return 0 }
     return (bits.load(ordering: .relaxed) >> id) & 1 == 1 ? 1 : 0
   }
+
+  /// Wire transport (v2): the whole state as one mask, bit N =
+  /// RETRO_DEVICE_ID_JOYPAD_N — replaces every button at once.
+  public var raw: UInt32 { bits.load(ordering: .relaxed) }
+
+  public func replaceAll(with raw: UInt32) {
+    bits.store(raw, ordering: .relaxed)
+  }
 }

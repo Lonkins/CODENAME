@@ -31,6 +31,22 @@ import Testing
     #expect(state.value(forDeviceID: 900) == 0)
   }
 
+  @Test func rawMaskRoundTripsWholeState() {
+    let state = InputState()
+    state.set(.a, pressed: true)
+    state.set(.left, pressed: true)
+    let mask = state.raw
+
+    let mirrored = InputState()
+    mirrored.replaceAll(with: mask)
+    #expect(mirrored.value(forDeviceID: RetroPadButton.a.deviceID) == 1)
+    #expect(mirrored.value(forDeviceID: RetroPadButton.left.deviceID) == 1)
+    #expect(mirrored.value(forDeviceID: RetroPadButton.b.deviceID) == 0)
+
+    mirrored.replaceAll(with: 0)
+    #expect(mirrored.raw == 0)
+  }
+
   @Test func deviceIDsMatchLibretroConstants() {
     #expect(RetroPadButton.b.deviceID == UInt32(RETRO_DEVICE_ID_JOYPAD_B))
     #expect(RetroPadButton.a.deviceID == UInt32(RETRO_DEVICE_ID_JOYPAD_A))

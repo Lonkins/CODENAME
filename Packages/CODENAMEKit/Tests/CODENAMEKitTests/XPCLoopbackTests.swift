@@ -87,8 +87,9 @@ struct XPCSessionParityTests {
         corePath: coreURL.path, contentPath: nil,
         systemDirectory: FileManager.default.temporaryDirectory.path,
         saveDirectory: FileManager.default.temporaryDirectory.path
-      ) { ok, width, height, _, _ in
-        continuation.resume(returning: ok && width == 320 && height == 240)
+      ) { ok, width, height, maxWidth, maxHeight, _, _ in
+        continuation.resume(
+          returning: ok && width == 320 && height == 240 && maxWidth == 320 && maxHeight == 240)
       }
     }
     #expect(opened)
@@ -121,7 +122,7 @@ struct XPCSessionParityTests {
         corePath: coreURL.path, contentPath: nil,
         systemDirectory: FileManager.default.temporaryDirectory.path,
         saveDirectory: FileManager.default.temporaryDirectory.path
-      ) { ok, _, _, _, _ in continuation.resume(returning: ok) }
+      ) { ok, _, _, _, _, _, _ in continuation.resume(returning: ok) }
     }
     #expect(opened)
 
@@ -131,7 +132,7 @@ struct XPCSessionParityTests {
     #expect(attached)
 
     let result: (Bool, Int, Int) = await withCheckedContinuation { continuation in
-      proxy.runFramesShared(frames) { ok, width, height, _ in
+      proxy.runFramesShared(frames, buttons: 0) { ok, width, height, _ in
         continuation.resume(returning: (ok, width, height))
       }
     }
@@ -167,19 +168,108 @@ struct XPCSessionParityTests {
         corePath: coreURL.path, contentPath: nil,
         systemDirectory: FileManager.default.temporaryDirectory.path,
         saveDirectory: FileManager.default.temporaryDirectory.path
-      ) { ok, _, _, _, _ in continuation.resume(returning: ok) }
+      ) { ok, _, _, _, _, _, _ in continuation.resume(returning: ok) }
     }
     #expect(opened)
     _ = await withCheckedContinuation { continuation in
       proxy.attachFrameSurface(tiny) { continuation.resume(returning: $0) }
     }
     let ok: Bool = await withCheckedContinuation { continuation in
-      proxy.runFramesShared(1) { ok, _, _, _ in continuation.resume(returning: ok) }
+      proxy.runFramesShared(1, buttons: 0) { ok, _, _, _ in continuation.resume(returning: ok) }
     }
     #expect(!ok)
     await withCheckedContinuation { continuation in
       proxy.closeSession { continuation.resume() }
     }
+  }
+
+  @Test func inputMaskReachesTheCoreOverTheWire() async throws {
+    // TestCore echoes the B button into pixel 1; press B via the v2 mask
+    // and read it back out of the shared surface after conversion.
+    let host = LoopbackCoreHost()
+    let proxy = try #require(host.proxy(errorHandler: { _ in }))
+    let surface = try #require(CoreHostWire.makeFrameSurface(width: 320, height: 240))
+
+    let opened: Bool = await withCheckedContinuation { continuation in
+      proxy.openSession(
+        corePath: coreURL.path, contentPath: nil,
+        systemDirectory: FileManager.default.temporaryDirectory.path,
+        saveDirectory: FileManager.default.temporaryDirectory.path
+      ) { ok, _, _, _, _, _, _ in continuation.resume(returning: ok) }
+    }
+    #expect(opened)
+    _ = await withCheckedContinuation { continuation in
+      proxy.attachFrameSurface(surface) { continuation.resume(returning: $0) }
+    }
+
+    let bButton = UInt32(1) << RetroPadButton.b.deviceID
+    let ok: Bool = await withCheckedContinuation { continuation in
+      proxy.runFramesShared(1, buttons: bButton) { ok, _, _, _ in
+        continuation.resume(returning: ok)
+      }
+    }
+    #expect(ok)
+
+    IOSurfaceLock(surface, [.readOnly], nil)
+    let base = IOSurfaceGetBaseAddress(surface).assumingMemoryBound(to: UInt8.self)
+    let pressed = PixelConverter.toBGRA8(
+      bytes: [1, 0], width: 1, height: 1, pitch: 2, format: .rgb565)
+    let pixel1 = [base[4], base[5], base[6], base[7]]
+    IOSurfaceUnlock(surface, [.readOnly], nil)
+    #expect(pixel1 == pressed)
+
+    await withCheckedContinuation { continuation in
+      proxy.closeSession { continuation.resume() }
+    }
+  }
+
+  @Test func saveRAMRoundTripsOverTheWire() async throws {
+    // TestCore stamps sram[0] with the frame counter; snapshot it, mutate
+    // the copy, restore, and the next snapshot must return the mutation.
+    let host = LoopbackCoreHost()
+    let proxy = try #require(host.proxy(errorHandler: { _ in }))
+
+    let opened: Bool = await withCheckedContinuation { continuation in
+      proxy.openSession(
+        corePath: coreURL.path, contentPath: nil,
+        systemDirectory: FileManager.default.temporaryDirectory.path,
+        saveDirectory: FileManager.default.temporaryDirectory.path
+      ) { ok, _, _, _, _, _, _ in continuation.resume(returning: ok) }
+    }
+    #expect(opened)
+
+    _ = await withCheckedContinuation { continuation in
+      proxy.runFrames(5) { _, _, _, _, _, _ in continuation.resume(returning: true) }
+    }
+    let snapshot: Data = await withCheckedContinuation { continuation in
+      proxy.saveRAMSnapshot { continuation.resume(returning: $0) }
+    }
+    #expect(!snapshot.isEmpty)
+    #expect(snapshot[0] == 5)
+
+    var mutated = snapshot
+    mutated[0] = 99
+    let restored: Bool = await withCheckedContinuation { continuation in
+      proxy.restoreSaveRAM(mutated) { continuation.resume(returning: $0) }
+    }
+    #expect(restored)
+    let replayed: Data = await withCheckedContinuation { continuation in
+      proxy.saveRAMSnapshot { continuation.resume(returning: $0) }
+    }
+    #expect(replayed[0] == 99)
+
+    await withCheckedContinuation { continuation in
+      proxy.closeSession { continuation.resume() }
+    }
+  }
+
+  @Test func saveRAMWithoutSessionRepliesEmpty() async {
+    let host = LoopbackCoreHost()
+    guard let proxy = host.proxy(errorHandler: { _ in }) else { return }
+    let snapshot: Data = await withCheckedContinuation { continuation in
+      proxy.saveRAMSnapshot { continuation.resume(returning: $0) }
+    }
+    #expect(snapshot.isEmpty)
   }
 
   @Test func probeValidatesRealCoresAndRejectsImposters() async throws {

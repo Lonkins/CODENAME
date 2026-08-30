@@ -11,9 +11,12 @@ import IOSurface
 
   /// Step C: the helper hosts a real core session (one per service instance).
   /// Reply: ok, baseWidth, baseHeight, fps, audioSampleRate.
+  /// Reply: ok, base width/height, max width/height, fps, audio rate. The
+  /// shared IOSurface must be sized from MAX geometry — cores switch video
+  /// modes mid-session (v2).
   func openSession(
     corePath: String, contentPath: String?, systemDirectory: String, saveDirectory: String,
-    reply: @escaping @Sendable (Bool, Int, Int, Double, Double) -> Void)
+    reply: @escaping @Sendable (Bool, Int, Int, Int, Int, Double, Double) -> Void)
 
   /// Runs N frames; replies with the latest frame (bytes, width, height,
   /// pitch, pixel-format wire code) and the drained interleaved audio.
@@ -35,8 +38,15 @@ import IOSurface
   /// fills it (converted, tightly row-copied) instead of shipping bytes.
   /// Audio remains message-based until profiling demands shared memory.
   func attachFrameSurface(_ surface: IOSurface, reply: @escaping @Sendable (Bool) -> Void)
+  /// v2: `buttons` is the port-0 RetroPad state as a raw bit mask (bit N =
+  /// RETRO_DEVICE_ID_JOYPAD_N), latched for every frame in the batch.
   func runFramesShared(
-    _ count: Int, reply: @escaping @Sendable (Bool, Int, Int, Data) -> Void)
+    _ count: Int, buttons: UInt32, reply: @escaping @Sendable (Bool, Int, Int, Data) -> Void)
+
+  /// v2: save-RAM (battery/memcard) persistence across the boundary — owned
+  /// bytes both ways, per the transport contract.
+  func saveRAMSnapshot(reply: @escaping @Sendable (Data) -> Void)
+  func restoreSaveRAM(_ data: Data, reply: @escaping @Sendable (Bool) -> Void)
 }
 
 extension CoreHostWire {
@@ -70,7 +80,7 @@ extension LibretroPixelFormat {
 }
 
 public enum CoreHostWire {
-  public static let version = 1
+  public static let version = 2
 
   public static func interface() -> NSXPCInterface {
     let interface = NSXPCInterface(with: CoreHostProtocol.self)
@@ -104,7 +114,7 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
 
   public func openSession(
     corePath: String, contentPath: String?, systemDirectory: String, saveDirectory: String,
-    reply: @escaping @Sendable (Bool, Int, Int, Double, Double) -> Void
+    reply: @escaping @Sendable (Bool, Int, Int, Int, Int, Double, Double) -> Void
   ) {
     coreQueue.async { [self] in
       let coreURL = URL(fileURLWithPath: corePath)
@@ -120,9 +130,10 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
         let av = session.avInfo
         reply(
           true, av?.baseSize.width ?? 0, av?.baseSize.height ?? 0,
+          av?.maxSize.width ?? 0, av?.maxSize.height ?? 0,
           av?.framesPerSecond ?? 0, av?.audioSampleRate ?? 0)
       } catch {
-        reply(false, 0, 0, 0, 0)
+        reply(false, 0, 0, 0, 0, 0, 0)
       }
     }
   }
@@ -183,6 +194,19 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
     }
   }
 
+  public func saveRAMSnapshot(reply: @escaping @Sendable (Data) -> Void) {
+    coreQueue.async { [self] in
+      reply(Data(session?.saveRAMSnapshot() ?? []))
+    }
+  }
+
+  public func restoreSaveRAM(_ data: Data, reply: @escaping @Sendable (Bool) -> Void) {
+    coreQueue.async { [self] in
+      guard let session else { return reply(false) }
+      reply(session.restoreSaveRAM([UInt8](data)))
+    }
+  }
+
   private var frameSurface: IOSurface?
 
   public func attachFrameSurface(_ surface: IOSurface, reply: @escaping @Sendable (Bool) -> Void) {
@@ -193,12 +217,13 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
   }
 
   public func runFramesShared(
-    _ count: Int, reply: @escaping @Sendable (Bool, Int, Int, Data) -> Void
+    _ count: Int, buttons: UInt32, reply: @escaping @Sendable (Bool, Int, Int, Data) -> Void
   ) {
     coreQueue.async { [self] in
       guard let session, let frameSurface else {
         return reply(false, 0, 0, Data())
       }
+      session.inputState.replaceAll(with: buttons)
       session.run(frames: count)
       let audio = session.drainAudioSamples()
       let audioData = audio.withUnsafeBufferPointer { Data(buffer: $0) }
