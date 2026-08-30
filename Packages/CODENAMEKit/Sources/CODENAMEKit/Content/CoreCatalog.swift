@@ -87,8 +87,15 @@ public struct CoreCatalog {
   }
 
   public func core(forExtension ext: String) -> Entry? {
+    cores(forExtension: ext).first
+  }
+
+  /// Every core claiming the extension, catalog order — disc extensions
+  /// are legitimately multi-claimed and the caller disambiguates by
+  /// content (DiscSniffer, ADR 0007).
+  public func cores(forExtension ext: String) -> [Entry] {
     let lowered = ext.lowercased()
-    return entries.first { $0.extensions.contains(lowered) }
+    return entries.filter { $0.extensions.contains(lowered) }
   }
 
   public var allExtensions: [String] {

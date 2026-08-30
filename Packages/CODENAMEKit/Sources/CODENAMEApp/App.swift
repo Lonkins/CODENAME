@@ -121,7 +121,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
   private static let maxContentBytes = 64 * 1024 * 1024
 
   private func openContent(at url: URL) {
-    guard let entry = catalog.core(forExtension: url.pathExtension) else {
+    guard let entry = routedCore(for: url) else {
       let alert = NSAlert()
       alert.messageText = "No bundled core plays “.\(url.pathExtension)” files"
       alert.informativeText =
@@ -162,6 +162,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     startGame(
       coreURL: entry.url, contentPath: url.path, contentAccess: ScopedAccess(url: url),
       viaHelper: entry.requiresHelper)
+  }
+
+  /// Extension routing with content-sniffed disambiguation for disc
+  /// formats several cores claim (ADR 0007).
+  private func routedCore(for url: URL) -> CoreCatalog.Entry? {
+    let candidates = catalog.cores(forExtension: url.pathExtension)
+    guard candidates.count > 1 else { return candidates.first }
+    switch DiscSniffer.identify(contentURL: url) {
+    case .playStation:
+      return candidates.first { $0.name.contains("PSX") } ?? candidates.first
+    case .segaCD, .unknown:
+      return candidates.first
+    }
   }
 
   @objc private func importBIOSAction(_ sender: Any?) {
