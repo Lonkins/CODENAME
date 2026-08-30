@@ -305,32 +305,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         self.alert("This core is already bundled with the app.")
         return
       }
-      // ADR 0001: unauthenticated cores never load in this process — the
-      // helper alone dlopens them.
-      let access = ScopedAccess(url: url)
-      let connection = NSXPCConnection(serviceName: "dev.CODENAME.CoreHost")
-      connection.remoteObjectInterface = CoreHostWire.interface()
-      connection.resume()
-      let proxy = connection.remoteObjectProxyWithErrorHandler { [weak self] _ in
-        DispatchQueue.main.async {
-          self?.alert(
-            "This build can’t run user-supplied cores: the isolation helper is unavailable.")
-        }
-      }
-      (proxy as? CoreHostProtocol)?.probeCore(path: url.path) { [weak self] ok, name in
-        DispatchQueue.main.async {
-          _ = access
-          connection.invalidate()
-          if ok {
-            self?.alert(
-              "“\(name)” verified in the isolated helper. "
-                + "Playing user-supplied cores through the helper arrives in a future update.")
-          } else {
-            self?.alert("The isolation helper could not load this file as a libretro core.")
-          }
-        }
+      self.probeUserCore(at: url)
+    }
+  }
+
+  private var probeConnection: NSXPCConnection?
+  private var probeAccess: ScopedAccess?
+
+  /// ADR 0001: unauthenticated cores never load in this process — the
+  /// helper alone dlopens them.
+  private func probeUserCore(at url: URL) {
+    probeAccess = ScopedAccess(url: url)
+    let connection = NSXPCConnection(serviceName: "dev.CODENAME.CoreHost")
+    connection.remoteObjectInterface = CoreHostWire.interface()
+    connection.resume()
+    probeConnection = connection
+    let proxy = connection.remoteObjectProxyWithErrorHandler { [weak self] _ in
+      DispatchQueue.main.async {
+        self?.finishProbe(
+          message: "This build can’t run user-supplied cores: the isolation helper is unavailable."
+        )
       }
     }
+    (proxy as? CoreHostProtocol)?.probeCore(path: url.path) { [weak self] ok, name in
+      DispatchQueue.main.async {
+        let message =
+          ok
+          ? "“\(name)” verified in the isolated helper. "
+            + "Playing user-supplied cores through the helper arrives in a future update."
+          : "The isolation helper could not load this file as a libretro core."
+        self?.finishProbe(message: message)
+      }
+    }
+  }
+
+  private func finishProbe(message: String) {
+    probeConnection?.invalidate()
+    probeConnection = nil
+    probeAccess = nil
+    alert(message)
   }
 
   private func alert(_ message: String) {
