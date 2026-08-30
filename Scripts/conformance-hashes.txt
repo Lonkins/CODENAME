@@ -1,0 +1,16 @@
+# Golden conformance hashes for the curated cores (recorded 2026-08-30).
+# Columns: system  core-dylib  content-env-var  frames  framebuffer-sha256
+#
+# Content never lives in this repository: each row names an environment
+# variable that must point at the exact local content file the hash was
+# recorded against. Rows whose variable is unset are skipped cleanly.
+# A hash is the SHA-256 of the raw framebuffer after running the given
+# number of frames from power-on with no input, and must be identical
+# in-process and through the XPC helper (Scripts/conformance.sh runs both).
+#
+# Re-record deliberately (core SHA bumps change hashes) — never to make a
+# red run green without understanding why it changed.
+genesis  genesis_plus_gx_libretro.dylib  CONFORMANCE_GENESIS  600  6ac8ba035d97e6bb8d7a3a4fae0004cd5aad3ae14962273cf4a4de0eb3d4a452
+snes     snes9x_libretro.dylib           CONFORMANCE_SNES     600  3143e1a6ec8bb15c03504effff5e6e596519be86c6b8761fb303892168d033b5
+gb       mgba_libretro.dylib             CONFORMANCE_GB       600  56d084461437d5e8e9943ab440db5e52988ca29510a7e6013f530fdb6f9e972c
+gba      mgba_libretro.dylib             CONFORMANCE_GBA      600  29bca5cc462b150d0530d1a0f1049c81833c34d823d0b15e21f0147dc806e054
