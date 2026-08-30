@@ -20,6 +20,7 @@ var frames = 300
 var expectedHash: String?
 var dumpPath: String?
 var useHelper = false
+var systemDir = FileManager.default.temporaryDirectory.path
 
 var arguments = Array(CommandLine.arguments.dropFirst()).makeIterator()
 while let flag = arguments.next() {
@@ -30,6 +31,7 @@ while let flag = arguments.next() {
   case "--expected-hash": expectedHash = arguments.next()
   case "--dump-frame": dumpPath = arguments.next()
   case "--helper": useHelper = true
+  case "--system-dir": systemDir = arguments.next() ?? systemDir
   default: fail("unknown argument \(flag)")
   }
 }
@@ -66,13 +68,15 @@ func writePNG(_ frame: CoreSession.VideoFrame, to path: String) {
 
 let coreURL = URL(fileURLWithPath: core)
 let environment = EnvironmentHandler(
-  systemDirectory: FileManager.default.temporaryDirectory,
+  systemDirectory: URL(fileURLWithPath: systemDir),
   saveDirectory: FileManager.default.temporaryDirectory)
 let policy = CoreTrustPolicy(allowedDirectory: coreURL.deletingLastPathComponent())
 
 // --helper: the same battery through the XPC serialization path (loopback
 // host — full NSXPCConnection machinery, no launchd needed in a bare tool).
-func runViaHelper(coreURL: URL, content: String, frames: Int, expectedHash: String?) {
+func runViaHelper(
+  coreURL: URL, content: String, frames: Int, expectedHash: String?, systemDir: String
+) {
   let host = LoopbackCoreHost()
   guard let proxy = host.proxy(errorHandler: { fail("xpc error: \($0.localizedDescription)") })
   else { fail("no helper proxy") }
@@ -92,7 +96,7 @@ func runViaHelper(coreURL: URL, content: String, frames: Int, expectedHash: Stri
   nonisolated(unsafe) var av: (ok: Bool, fps: Double, rate: Double) = (false, 0, 0)
   proxy.openSession(
     corePath: coreURL.path, contentPath: content,
-    systemDirectory: FileManager.default.temporaryDirectory.path,
+    systemDirectory: systemDir,
     saveDirectory: FileManager.default.temporaryDirectory.path
   ) { ok, _, _, _, _, _, fps, rate in
     av = (ok, fps, rate)
@@ -146,7 +150,9 @@ func runViaHelper(coreURL: URL, content: String, frames: Int, expectedHash: Stri
 }
 
 if useHelper {
-  runViaHelper(coreURL: coreURL, content: content, frames: frames, expectedHash: expectedHash)
+  runViaHelper(
+    coreURL: coreURL, content: content, frames: frames, expectedHash: expectedHash,
+    systemDir: systemDir)
   exit(0)
 }
 

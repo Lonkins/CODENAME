@@ -18,6 +18,14 @@ struct CoreCatalogTests {
     #expect(entry?.extensions.contains("bin") == true)
   }
 
+  @Test func exposesNeedFullPathFromTheCore() {
+    let catalog = CoreCatalog(pluginsDirectory: pluginsDirectory)
+    let entry = catalog.entries.first { $0.name == "CODENAME Test Core" }
+    // TestCore reads the data buffer; a false here also pins the default
+    // slurping load path for cartridge cores.
+    #expect(entry?.needsFullPath == false)
+  }
+
   @Test func routesExtensionCaseInsensitively() {
     let catalog = CoreCatalog(pluginsDirectory: pluginsDirectory)
     #expect(catalog.core(forExtension: "BIN")?.name == "CODENAME Test Core")

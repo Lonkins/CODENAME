@@ -8,6 +8,9 @@ public struct CoreCatalog {
     public let url: URL
     public let name: String
     public let extensions: [String]
+    /// The core streams content from disk itself; the host passes the path
+    /// only and the cartridge size cap does not apply (ADR 0007).
+    public let needsFullPath: Bool
   }
 
   public let entries: [Entry]
@@ -30,7 +33,9 @@ public struct CoreCatalog {
       library.symbols.getSystemInfo(&info)
       guard let namePointer = info.library_name else { return nil }
       let extensions = info.valid_extensions.map { Self.parseExtensions(String(cString: $0)) } ?? []
-      return Entry(url: url, name: String(cString: namePointer), extensions: extensions)
+      return Entry(
+        url: url, name: String(cString: namePointer), extensions: extensions,
+        needsFullPath: info.need_fullpath)
     }
   }
 

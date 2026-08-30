@@ -78,18 +78,30 @@ public final class CoreSession {
   public func loadGame(path: String?) throws(SessionError) {
     var loaded = false
     if let path {
-      // Both path and data are provided: need_fullpath cores use the former,
-      // the rest read (and must copy) the latter, per the libretro contract.
-      guard let contents = FileManager.default.contents(atPath: path) else {
-        throw .gameRejected
-      }
-      loaded = path.withCString { cPath in
-        contents.withUnsafeBytes { raw in
-          var info = retro_game_info()
-          info.path = cPath
-          info.data = raw.baseAddress
-          info.size = contents.count
-          return library.symbols.loadGame(&info)
+      var info = retro_system_info()
+      library.symbols.getSystemInfo(&info)
+      if info.need_fullpath {
+        // The core streams from disk itself (disc images, playlists) — the
+        // host must NOT slurp a possibly multi-hundred-MB file (ADR 0007).
+        loaded = path.withCString { cPath in
+          var game = retro_game_info()
+          game.path = cPath
+          return library.symbols.loadGame(&game)
+        }
+      } else {
+        // The core reads (and must copy) the data buffer, per the libretro
+        // contract; the path rides along for cores that peek at it.
+        guard let contents = FileManager.default.contents(atPath: path) else {
+          throw .gameRejected
+        }
+        loaded = path.withCString { cPath in
+          contents.withUnsafeBytes { raw in
+            var game = retro_game_info()
+            game.path = cPath
+            game.data = raw.baseAddress
+            game.size = contents.count
+            return library.symbols.loadGame(&game)
+          }
         }
       }
     } else {
