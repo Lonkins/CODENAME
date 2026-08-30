@@ -19,7 +19,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
   private let libraryModel = LibraryModel()
   private let recentsMenu = NSMenu(title: "Open Recent")
   private lazy var catalog = CoreCatalog(
-    pluginsDirectory: Bundle.main.builtInPlugInsURL ?? URL(fileURLWithPath: "/nonexistent"))
+    pluginsDirectory: Bundle.main.builtInPlugInsURL ?? URL(fileURLWithPath: "/nonexistent"),
+    helperOnlyDirectory: Bundle.main.builtInPlugInsURL?
+      .appendingPathComponent("HelperOnly", isDirectory: true))
   private let updaterController = SPUStandardUpdaterController(
     startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
 
@@ -131,12 +133,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
       alert.runModal()
       return
     }
+    // PlayStation needs the user's BIOS staged before a session can boot
+    // (ADR 0007); fail precisely, before a window ever opens.
+    if entry.requiresHelper, entry.name.contains("PSX") {
+      AppPaths.ensureExists()
+      let report = PSXBIOS.stage(files: [], into: AppPaths.system)
+      if report.missingRegions.count == PSXBIOS.known.count {
+        let alert = NSAlert()
+        alert.messageText = "PlayStation BIOS files are required"
+        alert.informativeText =
+          "Use File → Import PlayStation BIOS… to add your own BIOS images. "
+          + "They are recognized by content, whatever their filenames."
+        alert.runModal()
+        return
+      }
+    }
     libraryModel.recordPlay(
       path: url.path,
       displayName: url.deletingPathExtension().lastPathComponent,
       coreID: entry.url.deletingPathExtension().lastPathComponent,
       bookmark: try? Bookmark.create(for: url))
-    startGame(coreURL: entry.url, contentPath: url.path, contentAccess: ScopedAccess(url: url))
+    startGame(
+      coreURL: entry.url, contentPath: url.path, contentAccess: ScopedAccess(url: url),
+      viaHelper: entry.requiresHelper)
+  }
+
+  @objc private func importBIOSAction(_ sender: Any?) {
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = true
+    panel.canChooseDirectories = true
+    panel.allowsMultipleSelection = true
+    panel.message = "Choose your PlayStation BIOS files (or a folder of them)"
+    panel.begin { [weak self] response in
+      guard let self, response == .OK else { return }
+      AppPaths.ensureExists()
+      let files = panel.urls.flatMap { url -> [URL] in
+        var isDirectory: ObjCBool = false
+        FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+        guard isDirectory.boolValue else { return [url] }
+        let access = ScopedAccess(url: url)
+        defer { _ = access }
+        return
+          (try? FileManager.default.contentsOfDirectory(
+            at: url, includingPropertiesForKeys: nil)) ?? []
+      }
+      let accesses = panel.urls.map(ScopedAccess.init(url:))
+      let report = PSXBIOS.stage(files: files, into: AppPaths.system)
+      _ = accesses
+      let staged = (report.staged + report.alreadyPresent).map(\.region).sorted()
+      let alert = NSAlert()
+      alert.messageText = "BIOS import"
+      alert.informativeText =
+        (staged.isEmpty
+          ? "No known BIOS images were recognized."
+          : "Recognized: \(staged.joined(separator: ", ")).")
+        + (report.missingRegions.isEmpty
+          ? " All regions present."
+          : " Still missing: \(report.missingRegions.joined(separator: ", ")).")
+      alert.runModal()
+    }
   }
 
   @objc private func openRecentAction(_ sender: NSMenuItem) {
@@ -574,6 +629,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
       title: "Add Core…", action: #selector(addCoreAction(_:)), keyEquivalent: "")
     addCoreItem.target = self
     fileMenu.addItem(addCoreItem)
+    let importBIOSItem = NSMenuItem(
+      title: "Import PlayStation BIOS…", action: #selector(importBIOSAction(_:)),
+      keyEquivalent: "")
+    importBIOSItem.target = self
+    fileMenu.addItem(importBIOSItem)
 
     let gameMenu = NSMenu(title: "Game")
     for slot in 1...3 {

@@ -37,6 +37,39 @@ struct CoreCatalogTests {
     #expect(catalog.core(forExtension: "docx") == nil)
   }
 
+  @Test func sidecarDescribesHelperOnlyCoreWithoutLoadingIt() throws {
+    let helperDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("helper-only-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: helperDir, withIntermediateDirectories: true)
+    // A deliberately non-loadable stand-in dylib: if the catalog ever tried
+    // to dlopen it, entry creation would fail — the sidecar is the source.
+    try Data("not a dylib".utf8).write(to: helperDir.appendingPathComponent("psx_libretro.dylib"))
+    try Data(
+      """
+      name = Example Disc Core
+      extensions = cue|chd
+      need_fullpath = true
+      """.utf8
+    ).write(to: helperDir.appendingPathComponent("psx_libretro.info"))
+
+    let catalog = CoreCatalog(pluginsDirectory: pluginsDirectory, helperOnlyDirectory: helperDir)
+    let entry = try #require(catalog.entries.first { $0.name == "Example Disc Core" })
+    #expect(entry.requiresHelper)
+    #expect(entry.needsFullPath)
+    #expect(entry.extensions == ["cue", "chd"])
+    #expect(catalog.core(forExtension: "cue")?.requiresHelper == true)
+  }
+
+  @Test func sidecarWithoutItsDylibIsIgnored() throws {
+    let helperDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("helper-only-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: helperDir, withIntermediateDirectories: true)
+    try Data("name = Ghost\nextensions = xyz\n".utf8)
+      .write(to: helperDir.appendingPathComponent("ghost_libretro.info"))
+    let catalog = CoreCatalog(pluginsDirectory: pluginsDirectory, helperOnlyDirectory: helperDir)
+    #expect(catalog.core(forExtension: "xyz") == nil)
+  }
+
   @Test func emptyDirectoryYieldsEmptyCatalog() {
     let empty = FileManager.default.temporaryDirectory
       .appendingPathComponent("no-cores-\(UUID().uuidString)", isDirectory: true)
