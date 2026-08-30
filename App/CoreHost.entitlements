@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- ADR 0006 decision 5: the helper ALONE carries the weakening
+       entitlements — unauthenticated cores and (when scheduled) JIT live
+       here, never on the main app. Inert under ad-hoc signing (no hardened
+       runtime); load-bearing the day Developer ID signing resumes, which is
+       exactly when their absence would be a dyld kill. -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+</dict>
+</plist>

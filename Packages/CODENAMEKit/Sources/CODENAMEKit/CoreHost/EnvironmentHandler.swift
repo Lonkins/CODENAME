@@ -11,10 +11,15 @@ public final class EnvironmentHandler {
 
   private let systemDirectoryCString: UnsafeMutablePointer<CChar>
   private let saveDirectoryCString: UnsafeMutablePointer<CChar>
+  private let jitCapable: Bool
 
-  public init(systemDirectory: URL, saveDirectory: URL) {
+  /// `jitCapable` is true only in the helper process (ADR 0006 decision 5:
+  /// the JIT entitlement — and therefore the JIT answer — never belongs to
+  /// the main app).
+  public init(systemDirectory: URL, saveDirectory: URL, jitCapable: Bool = false) {
     systemDirectoryCString = strdup(systemDirectory.path)
     saveDirectoryCString = strdup(saveDirectory.path)
+    self.jitCapable = jitCapable
   }
 
   deinit {
@@ -61,6 +66,11 @@ public final class EnvironmentHandler {
 
     case RETRO_ENVIRONMENT_GET_VARIABLE, RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE:
       return false
+
+    case RETRO_ENVIRONMENT_GET_JIT_CAPABLE:
+      guard jitCapable else { return false }
+      data?.assumingMemoryBound(to: Bool.self).pointee = true
+      return true
 
     case RETRO_ENVIRONMENT_GET_LOG_INTERFACE:
       // retro_log_printf_t is variadic C — unimplementable from Swift; cores fall back to stderr.

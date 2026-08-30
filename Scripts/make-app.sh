@@ -69,7 +69,10 @@ for plugin in "$APP/Contents/PlugIns/"*.dylib "$APP/Contents/PlugIns/HelperOnly/
   [ -e "$plugin" ] || continue  # unmatched glob under set -u
   codesign --force $RUNTIME_OPTS --sign "$IDENTITY" "$plugin"
 done
-codesign --force $RUNTIME_OPTS --sign "$IDENTITY" "$XPC_BUNDLE"
+# Helper-only entitlements (ADR 0006 decision 5); inert without hardened
+# runtime, required once real signing resumes.
+codesign --force $RUNTIME_OPTS --entitlements App/CoreHost.entitlements \
+  --sign "$IDENTITY" "$XPC_BUNDLE"
 FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
 for NESTED in \
   "$FRAMEWORK/Versions/B/XPCServices/Downloader.xpc" \

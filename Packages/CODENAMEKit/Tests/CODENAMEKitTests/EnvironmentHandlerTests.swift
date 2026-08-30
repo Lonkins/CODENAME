@@ -12,6 +12,30 @@ import Testing
     )
   }
 
+  @Test func jitCapableRefusedByDefault() {
+    let handler = makeHandler()
+    var capable = true
+    let handled = withUnsafeMutablePointer(to: &capable) {
+      handler.handle(command: UInt32(RETRO_ENVIRONMENT_GET_JIT_CAPABLE), data: $0)
+    }
+    #expect(!handled)
+  }
+
+  @Test func jitCapableAnswersTrueWhenHostAllowsIt() {
+    // Helper-process configuration only (ADR 0006 decision 5): the main
+    // app's handler never sets this.
+    let handler = EnvironmentHandler(
+      systemDirectory: URL(fileURLWithPath: "/tmp/system"),
+      saveDirectory: URL(fileURLWithPath: "/tmp/save"),
+      jitCapable: true)
+    var capable = false
+    let handled = withUnsafeMutablePointer(to: &capable) {
+      handler.handle(command: UInt32(RETRO_ENVIRONMENT_GET_JIT_CAPABLE), data: $0)
+    }
+    #expect(handled)
+    #expect(capable)
+  }
+
   @Test func setPixelFormatAcceptsSupported() {
     let handler = makeHandler()
     var format = RETRO_PIXEL_FORMAT_RGB565

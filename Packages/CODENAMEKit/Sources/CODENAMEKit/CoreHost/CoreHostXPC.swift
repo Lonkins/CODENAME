@@ -119,7 +119,8 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
       let coreURL = URL(fileURLWithPath: corePath)
       let environment = EnvironmentHandler(
         systemDirectory: URL(fileURLWithPath: systemDirectory),
-        saveDirectory: URL(fileURLWithPath: saveDirectory))
+        saveDirectory: URL(fileURLWithPath: saveDirectory),
+        jitCapable: true)
       let policy = CoreTrustPolicy(allowedDirectory: coreURL.deletingLastPathComponent())
       do {
         let session = try CoreSession(
