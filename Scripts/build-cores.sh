@@ -56,6 +56,14 @@ echo "building beetle-psx @ ${BEETLE_PSX_SHA:0:7}"
 fetch "$BEETLE_PSX_REPO" "$BEETLE_PSX_SHA" "$WORK/beetle-psx"
 make -C "$WORK/beetle-psx" -j"$(sysctl -n hw.ncpu)" >/dev/null
 cp "$WORK/beetle-psx/mednafen_psx_libretro.dylib" "$HELPER_ONLY_OUT/"
+# Static metadata sidecar (upstream .info convention): the app process may
+# never dlopen a helper-only core, so the catalog reads this instead. The
+# values are pinned with the SHA above — re-verify when bumping it.
+cat > "$HELPER_ONLY_OUT/mednafen_psx_libretro.info" <<'INFO'
+name = Beetle PSX
+extensions = exe|cue|toc|ccd|m3u|pbp|chd
+need_fullpath = true
+INFO
 
 for dylib in "$OUT"/*.dylib "$HELPER_ONLY_OUT"/*.dylib; do
   file "$dylib" | grep -q arm64 || { echo "error: $dylib not arm64" >&2; exit 1; }

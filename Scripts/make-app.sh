@@ -41,6 +41,7 @@ fi
 if ls build/cores/helper-only/*.dylib >/dev/null 2>&1; then
   mkdir -p "$APP/Contents/PlugIns/HelperOnly"
   cp build/cores/helper-only/*.dylib "$APP/Contents/PlugIns/HelperOnly/"
+  cp build/cores/helper-only/*.info "$APP/Contents/PlugIns/HelperOnly/" 2>/dev/null || true
 fi
 
 # Bundled XPC core-host service (ADR 0006 step B).
