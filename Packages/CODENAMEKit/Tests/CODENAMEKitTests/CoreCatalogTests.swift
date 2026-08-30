@@ -60,6 +60,25 @@ struct CoreCatalogTests {
     #expect(catalog.core(forExtension: "cue")?.requiresHelper == true)
   }
 
+  @Test func sidecarsPairAcrossSplitDirectories() throws {
+    // App-bundle layout: dylibs under PlugIns (code), sidecars under
+    // Resources (data) — pairing is by basename.
+    let base = FileManager.default.temporaryDirectory
+      .appendingPathComponent("split-\(UUID().uuidString)", isDirectory: true)
+    let dylibs = base.appendingPathComponent("dylibs")
+    let sidecars = base.appendingPathComponent("sidecars")
+    try FileManager.default.createDirectory(at: dylibs, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: sidecars, withIntermediateDirectories: true)
+    try Data("stub".utf8).write(to: dylibs.appendingPathComponent("disc_libretro.dylib"))
+    try Data("name = Split Core\nextensions = cue\nneed_fullpath = true\n".utf8)
+      .write(to: sidecars.appendingPathComponent("disc_libretro.info"))
+
+    let catalog = CoreCatalog(
+      pluginsDirectory: pluginsDirectory, helperOnlyDirectory: dylibs,
+      sidecarDirectory: sidecars)
+    #expect(catalog.core(forExtension: "cue")?.name == "Split Core")
+  }
+
   @Test func sidecarWithoutItsDylibIsIgnored() throws {
     let helperDir = FileManager.default.temporaryDirectory
       .appendingPathComponent("helper-only-\(UUID().uuidString)", isDirectory: true)
