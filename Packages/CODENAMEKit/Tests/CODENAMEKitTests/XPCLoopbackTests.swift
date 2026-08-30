@@ -108,6 +108,80 @@ struct XPCSessionParityTests {
     }
   }
 
+  @Test func sharedSurfaceCarriesConvertedFrames() async throws {
+    let frames = 30
+    let host = LoopbackCoreHost()
+    let maybeProxy = host.proxy(errorHandler: { _ in })
+    let proxy = try #require(maybeProxy)
+    let maybeSurface = CoreHostWire.makeFrameSurface(width: 320, height: 240)
+    let surface = try #require(maybeSurface)
+
+    let opened: Bool = await withCheckedContinuation { continuation in
+      proxy.openSession(
+        corePath: coreURL.path, contentPath: nil,
+        systemDirectory: FileManager.default.temporaryDirectory.path,
+        saveDirectory: FileManager.default.temporaryDirectory.path
+      ) { ok, _, _, _, _ in continuation.resume(returning: ok) }
+    }
+    #expect(opened)
+
+    let attached: Bool = await withCheckedContinuation { continuation in
+      proxy.attachFrameSurface(surface) { continuation.resume(returning: $0) }
+    }
+    #expect(attached)
+
+    let result: (Bool, Int, Int) = await withCheckedContinuation { continuation in
+      proxy.runFramesShared(frames) { ok, width, height, _ in
+        continuation.resume(returning: (ok, width, height))
+      }
+    }
+    #expect(result.0)
+    #expect(result.1 == 320)
+    #expect(result.2 == 240)
+
+    // TestCore fills the framebuffer with the frame counter; after 30 frames
+    // pixel 0 is RGB565 value 30 → converted BGRA (B,G,R,A).
+    IOSurfaceLock(surface, [.readOnly], nil)
+    let base = IOSurfaceGetBaseAddress(surface).assumingMemoryBound(to: UInt8.self)
+    let expected = PixelConverter.toBGRA8(
+      bytes: [UInt8(frames & 0xFF), UInt8(frames >> 8)], width: 1, height: 1, pitch: 2,
+      format: .rgb565)
+    let pixel = [base[0], base[1], base[2], base[3]]
+    IOSurfaceUnlock(surface, [.readOnly], nil)
+    #expect(pixel == expected)
+
+    await withCheckedContinuation { continuation in
+      proxy.closeSession { continuation.resume() }
+    }
+  }
+
+  @Test func undersizedSurfaceIsRefused() async throws {
+    let host = LoopbackCoreHost()
+    let maybeProxy = host.proxy(errorHandler: { _ in })
+    let proxy = try #require(maybeProxy)
+    let maybeSurface = CoreHostWire.makeFrameSurface(width: 16, height: 16)
+    let tiny = try #require(maybeSurface)
+
+    let opened: Bool = await withCheckedContinuation { continuation in
+      proxy.openSession(
+        corePath: coreURL.path, contentPath: nil,
+        systemDirectory: FileManager.default.temporaryDirectory.path,
+        saveDirectory: FileManager.default.temporaryDirectory.path
+      ) { ok, _, _, _, _ in continuation.resume(returning: ok) }
+    }
+    #expect(opened)
+    _ = await withCheckedContinuation { continuation in
+      proxy.attachFrameSurface(tiny) { continuation.resume(returning: $0) }
+    }
+    let ok: Bool = await withCheckedContinuation { continuation in
+      proxy.runFramesShared(1) { ok, _, _, _ in continuation.resume(returning: ok) }
+    }
+    #expect(!ok)
+    await withCheckedContinuation { continuation in
+      proxy.closeSession { continuation.resume() }
+    }
+  }
+
   @Test func runFramesWithoutSessionRepliesEmpty() async {
     let host = LoopbackCoreHost()
     guard let proxy = host.proxy(errorHandler: { _ in }) else { return }

@@ -20,6 +20,23 @@ import IOSurface
     _ count: Int, reply: @escaping @Sendable (Data, Int, Int, Int, Int, Data) -> Void)
 
   func closeSession(reply: @escaping @Sendable () -> Void)
+
+  /// C2 transport: the app attaches a BGRA IOSurface once; runFramesShared
+  /// fills it (converted, tightly row-copied) instead of shipping bytes.
+  /// Audio remains message-based until profiling demands shared memory.
+  func attachFrameSurface(_ surface: IOSurface, reply: @escaping @Sendable (Bool) -> Void)
+  func runFramesShared(
+    _ count: Int, reply: @escaping @Sendable (Bool, Int, Int, Data) -> Void)
+}
+
+extension CoreHostWire {
+  /// App-side helper: a BGRA surface sized for a core's max geometry.
+  public static func makeFrameSurface(width: Int, height: Int) -> IOSurface? {
+    IOSurface(properties: [
+      .width: width, .height: height, .bytesPerElement: 4,
+      .pixelFormat: UInt32(0x4247_5241),  // 'BGRA'
+    ])
+  }
 }
 
 extension LibretroPixelFormat {
@@ -51,6 +68,10 @@ public enum CoreHostWire {
     interface.setClasses(
       allowed,
       for: #selector(CoreHostProtocol.roundTripFrame(_:reply:)),
+      argumentIndex: 0, ofReply: false)
+    interface.setClasses(
+      allowed,
+      for: #selector(CoreHostProtocol.attachFrameSurface(_:reply:)),
       argumentIndex: 0, ofReply: false)
     return interface
   }
@@ -119,7 +140,54 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
     coreQueue.async { [self] in
       session?.shutdown()
       session = nil
+      frameSurface = nil
       reply()
+    }
+  }
+
+  private var frameSurface: IOSurface?
+
+  public func attachFrameSurface(_ surface: IOSurface, reply: @escaping @Sendable (Bool) -> Void) {
+    coreQueue.async { [self] in
+      frameSurface = surface
+      reply(true)
+    }
+  }
+
+  public func runFramesShared(
+    _ count: Int, reply: @escaping @Sendable (Bool, Int, Int, Data) -> Void
+  ) {
+    coreQueue.async { [self] in
+      guard let session, let frameSurface else {
+        return reply(false, 0, 0, Data())
+      }
+      session.run(frames: count)
+      let audio = session.drainAudioSamples()
+      let audioData = audio.withUnsafeBufferPointer { Data(buffer: $0) }
+      guard let frame = session.latestFrame,
+        frame.width <= IOSurfaceGetWidth(frameSurface),
+        frame.height <= IOSurfaceGetHeight(frameSurface)
+      else {
+        return reply(false, 0, 0, audioData)
+      }
+
+      let bgra = PixelConverter.toBGRA8(
+        bytes: frame.bytes, width: frame.width, height: frame.height,
+        pitch: frame.pitch, format: frame.pixelFormat)
+      IOSurfaceLock(frameSurface, [], nil)
+      let base = IOSurfaceGetBaseAddress(frameSurface)
+      let surfaceRowBytes = IOSurfaceGetBytesPerRow(frameSurface)
+      bgra.withUnsafeBytes { source in
+        guard let sourceBase = source.baseAddress else { return }
+        for row in 0..<frame.height {
+          memcpy(
+            base.advanced(by: row * surfaceRowBytes),
+            sourceBase.advanced(by: row * frame.width * 4),
+            frame.width * 4)
+        }
+      }
+      IOSurfaceUnlock(frameSurface, [], nil)
+      reply(true, frame.width, frame.height, audioData)
     }
   }
 }
