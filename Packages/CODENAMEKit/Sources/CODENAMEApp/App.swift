@@ -13,7 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
   private var libraryWindow: NSWindow?
   private var settingsWindow: NSWindow?
   private var gameWindow: NSWindow?
-  private var displayLoop: CoreDisplayLoop?
+  private var displayLoop: (any EmulationLoop)?
   private var inputController: InputController?
   private var contentAccess: ScopedAccess?
   private let libraryModel = LibraryModel()
@@ -181,7 +181,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
   func startGame(
     coreURL: URL, contentPath: String?, contentAccess: ScopedAccess? = nil,
-    displayOverrides: DisplaySettings? = nil
+    displayOverrides: DisplaySettings? = nil, viaHelper: Bool = false
   ) {
     stopGame()
     self.contentAccess = contentAccess
@@ -205,10 +205,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     gameView.layoutSubtreeIfNeeded()
 
     let refresh = Double(window.screen?.maximumFramesPerSecond ?? 60)
-    let loop = CoreDisplayLoop(
-      layer: gameView.metalLayer, coreURL: coreURL,
-      contentPath: contentPath, displayRefresh: refresh,
-      displaySettings: LiveDisplaySettings(resolved))
+    // ADR 0007: helper-only cores and user-supplied cores run out of
+    // process; a dev override forces bundled cores through the helper too.
+    let forceHelper = ProcessInfo.processInfo.environment["CODENAME_FORCE_HELPER"] != nil
+    let maybeLoop: (any EmulationLoop)? =
+      (viaHelper || forceHelper)
+      ? HelperDisplayLoop(
+        layer: gameView.metalLayer, coreURL: coreURL,
+        contentPath: contentPath, displayRefresh: refresh,
+        displaySettings: LiveDisplaySettings(resolved))
+      : CoreDisplayLoop(
+        layer: gameView.metalLayer, coreURL: coreURL,
+        contentPath: contentPath, displayRefresh: refresh,
+        displaySettings: LiveDisplaySettings(resolved))
+    guard let loop = maybeLoop else {
+      window.close()
+      alert("This build can’t run cores in the isolation helper.")
+      return
+    }
     let input = InputController(inputState: loop.inputState, mapping: loadMapping(forCore: coreURL))
     input.start()
 
@@ -223,6 +237,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     displayLoop = nil
     inputController = nil
     contentAccess = nil
+    userCoreAccess = nil
     if let window = gameWindow {
       window.delegate = nil
       window.close()
@@ -311,6 +326,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
   private var probeConnection: NSXPCConnection?
   private var probeAccess: ScopedAccess?
+  private var userCoreAccess: ScopedAccess?
 
   /// ADR 0001: unauthenticated cores never load in this process — the
   /// helper alone dlopens them.
@@ -329,21 +345,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
     (proxy as? CoreHostProtocol)?.probeCore(path: url.path) { [weak self] ok, name in
       DispatchQueue.main.async {
-        let message =
-          ok
-          ? "“\(name)” verified in the isolated helper. "
-            + "Playing user-supplied cores through the helper arrives in a future update."
-          : "The isolation helper could not load this file as a libretro core."
-        self?.finishProbe(message: message)
+        guard ok else {
+          self?.finishProbe(
+            message: "The isolation helper could not load this file as a libretro core.")
+          return
+        }
+        self?.finishProbe(message: nil)
+        self?.promptContentForUserCore(at: url, named: name)
       }
     }
   }
 
-  private func finishProbe(message: String) {
+  private func finishProbe(message: String?) {
     probeConnection?.invalidate()
     probeConnection = nil
     probeAccess = nil
-    alert(message)
+    if let message { alert(message) }
+  }
+
+  /// A verified user core plays exclusively through the helper (ADR 0001/
+  /// 0007) — pick its content and go. The core grant lives for the session.
+  private func promptContentForUserCore(at coreURL: URL, named name: String) {
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = true
+    panel.canChooseDirectories = false
+    panel.allowsMultipleSelection = false
+    panel.message = "Choose content for “\(name)” (runs in the isolation helper)"
+    panel.begin { [weak self] response in
+      guard let self, response == .OK, let contentURL = panel.url else { return }
+      self.userCoreAccess = ScopedAccess(url: coreURL)
+      self.startGame(
+        coreURL: coreURL, contentPath: contentURL.path,
+        contentAccess: ScopedAccess(url: contentURL), viaHelper: true)
+    }
   }
 
   private func alert(_ message: String) {
