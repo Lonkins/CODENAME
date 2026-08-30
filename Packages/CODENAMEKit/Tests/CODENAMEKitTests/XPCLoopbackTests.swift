@@ -79,7 +79,8 @@ struct XPCSessionParityTests {
     let expected = try inProcessRun(frames: frames)
 
     let host = LoopbackCoreHost()
-    let proxy = try #require(host.proxy(errorHandler: { _ in }))
+    let maybeProxy = host.proxy(errorHandler: { _ in })
+    let proxy = try #require(maybeProxy)
 
     let opened: Bool = await withCheckedContinuation { continuation in
       proxy.openSession(
