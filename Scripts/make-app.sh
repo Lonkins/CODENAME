@@ -36,6 +36,12 @@ cp "$BUILD_DIR/libTestCore.dylib" "$APP/Contents/PlugIns/"
 if ls build/cores/*.dylib >/dev/null 2>&1; then
   cp build/cores/*.dylib "$APP/Contents/PlugIns/"
 fi
+# Helper-only cores (GPL, ADR 0007) go in a subdirectory the app-process
+# trust policy refuses by construction; only the helper may load them.
+if ls build/cores/helper-only/*.dylib >/dev/null 2>&1; then
+  mkdir -p "$APP/Contents/PlugIns/HelperOnly"
+  cp build/cores/helper-only/*.dylib "$APP/Contents/PlugIns/HelperOnly/"
+fi
 
 # Bundled XPC core-host service (ADR 0006 step B).
 XPC_BUNDLE="$APP/Contents/XPCServices/CoreHost.xpc"
@@ -55,7 +61,8 @@ RUNTIME_OPTS=""
 if [ "$IDENTITY" != "-" ]; then RUNTIME_OPTS="--options runtime"; fi
 
 # Sign inside-out: plug-ins and Sparkle's nested services, the framework, then the app.
-for plugin in "$APP/Contents/PlugIns/"*.dylib; do
+for plugin in "$APP/Contents/PlugIns/"*.dylib "$APP/Contents/PlugIns/HelperOnly/"*.dylib; do
+  [ -e "$plugin" ] || continue  # unmatched glob under set -u
   codesign --force $RUNTIME_OPTS --sign "$IDENTITY" "$plugin"
 done
 codesign --force $RUNTIME_OPTS --sign "$IDENTITY" "$XPC_BUNDLE"
