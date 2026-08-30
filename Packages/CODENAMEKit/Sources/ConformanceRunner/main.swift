@@ -94,7 +94,7 @@ func runViaHelper(coreURL: URL, content: String, frames: Int, expectedHash: Stri
     corePath: coreURL.path, contentPath: content,
     systemDirectory: FileManager.default.temporaryDirectory.path,
     saveDirectory: FileManager.default.temporaryDirectory.path
-  ) { ok, _, _, _, _, fps, rate in
+  ) { ok, _, _, _, _, _, fps, rate in
     av = (ok, fps, rate)
     openSemaphore.signal()
   }
