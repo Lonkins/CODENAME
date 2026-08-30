@@ -1,3 +1,4 @@
+import CLibretro
 import Foundation
 import IOSurface
 
@@ -20,6 +21,10 @@ import IOSurface
     _ count: Int, reply: @escaping @Sendable (Data, Int, Int, Int, Int, Data) -> Void)
 
   func closeSession(reply: @escaping @Sendable () -> Void)
+
+  /// Step D: validate an arbitrary core WITHOUT a session — the untrusted
+  /// dylib is dlopen'd only inside the helper process. Reply: ok, coreName.
+  func probeCore(path: String, reply: @escaping @Sendable (Bool, String) -> Void)
 
   /// Save-state round trip across the boundary (owned bytes, per the
   /// transport contract).
@@ -147,6 +152,20 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
       session = nil
       frameSurface = nil
       reply()
+    }
+  }
+
+  public func probeCore(path: String, reply: @escaping @Sendable (Bool, String) -> Void) {
+    coreQueue.async {
+      let url = URL(fileURLWithPath: path)
+      let policy = CoreTrustPolicy(allowedDirectory: url.deletingLastPathComponent())
+      guard let library = try? CoreLibrary(url: url, policy: policy) else {
+        return reply(false, "")
+      }
+      var info = retro_system_info()
+      library.symbols.getSystemInfo(&info)
+      let name = info.library_name.map { String(cString: $0) } ?? ""
+      reply(!name.isEmpty, name)
     }
   }
 

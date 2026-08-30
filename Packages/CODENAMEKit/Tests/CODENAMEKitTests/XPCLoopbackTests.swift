@@ -182,6 +182,23 @@ struct XPCSessionParityTests {
     }
   }
 
+  @Test func probeValidatesRealCoresAndRejectsImposters() async throws {
+    let host = LoopbackCoreHost()
+    let maybeProxy = host.proxy(errorHandler: { _ in })
+    let proxy = try #require(maybeProxy)
+
+    let good: (Bool, String) = await withCheckedContinuation { continuation in
+      proxy.probeCore(path: coreURL.path) { continuation.resume(returning: ($0, $1)) }
+    }
+    #expect(good.0)
+    #expect(good.1 == "CODENAME Test Core")
+
+    let bad: Bool = await withCheckedContinuation { continuation in
+      proxy.probeCore(path: "/usr/lib/libz.dylib") { ok, _ in continuation.resume(returning: ok) }
+    }
+    #expect(!bad)
+  }
+
   @Test func runFramesWithoutSessionRepliesEmpty() async {
     let host = LoopbackCoreHost()
     guard let proxy = host.proxy(errorHandler: { _ in }) else { return }
