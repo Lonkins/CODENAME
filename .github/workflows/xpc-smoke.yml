@@ -8,6 +8,7 @@ on:
     paths:
       - "Scripts/make-app.sh"
       - "Packages/CODENAMEKit/Sources/CoreHostXPC/**"
+      - "Packages/CODENAMEKit/Sources/CODENAMEKit/CoreHost/**"
       - "App/CoreHost-Info.plist"
       - ".github/workflows/xpc-smoke.yml"
 
@@ -26,4 +27,4 @@ jobs:
           sleep 8
           kill $APP_PID 2>/dev/null || true
           cat smoke.log | grep -v CoreAudio || true
-          grep -q "xpc smoke: helper version 1" smoke.log
+          grep -q "xpc smoke: helper version 2" smoke.log
