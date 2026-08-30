@@ -168,13 +168,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
   /// formats several cores claim (ADR 0007).
   private func routedCore(for url: URL) -> CoreCatalog.Entry? {
     let candidates = catalog.cores(forExtension: url.pathExtension)
-    NSLog(
-      "route debug: ext=%@ candidates=%@ sniff=%d", url.pathExtension,
-      candidates.map(\.name).joined(separator: ","),
-      DiscSniffer.identify(contentURL: url) == .playStation ? 1 : 0)
-    NSLog(
-      "route debug: all=%@ sidecarDir=%@", catalog.entries.map(\.name).joined(separator: ","),
-      Bundle.main.resourceURL?.appendingPathComponent("HelperOnly").path ?? "nil")
     guard candidates.count > 1 else { return candidates.first }
     switch DiscSniffer.identify(contentURL: url) {
     case .playStation:
