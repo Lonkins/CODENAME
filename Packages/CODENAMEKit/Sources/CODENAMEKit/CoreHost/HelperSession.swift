@@ -82,9 +82,13 @@ public final class HelperSession: @unchecked Sendable {
     proxy.runFramesShared(1, buttons: inputState.raw) { [self] ok, width, height, audio in
       if ok {
         packedFrameSize.store(Self.pack(width, height), ordering: .relaxed)
+      }
+      // Release BEFORE the callback: a caller that chains its next frame
+      // from onAudio must never race the in-flight guard.
+      inFlight.store(false, ordering: .releasing)
+      if ok {
         onAudio(audio)
       }
-      inFlight.store(false, ordering: .releasing)
     }
     return true
   }
