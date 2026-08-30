@@ -1,3 +1,4 @@
+import IOSurface
 import Metal
 
 /// Blits a core frame into a render target with nearest-neighbour sampling.
@@ -23,12 +24,13 @@ public final class MetalPresenter {
       float2 uv;
     };
 
-    vertex VertexOut blit_vertex(uint vid [[vertex_id]]) {
+    vertex VertexOut blit_vertex(uint vid [[vertex_id]],
+                                 constant float2 &uvScale [[buffer(0)]]) {
       float2 positions[4] = {float2(-1,-1), float2(1,-1), float2(-1,1), float2(1,1)};
       float2 uvs[4] = {float2(0,1), float2(1,1), float2(0,0), float2(1,0)};
       VertexOut out;
       out.position = float4(positions[vid], 0, 1);
-      out.uv = uvs[vid];
+      out.uv = uvs[vid] * uvScale;
       return out;
     }
 
@@ -76,6 +78,30 @@ public final class MetalPresenter {
         withBytes: base, bytesPerRow: frame.width * 4)
     }
 
+    try encode(
+      source: source, uvScale: SIMD2<Float>(1, 1), into: target,
+      destination: destination, presenting: drawable)
+  }
+
+  /// Helper-session path: the frame already sits, BGRA-converted, in the
+  /// shared IOSurface — sample just its region (surfaces are max-geometry
+  /// sized; frames can be smaller after a video-mode switch).
+  public func render(
+    surface: IOSurface, frameWidth: Int, frameHeight: Int, into target: MTLTexture,
+    destination: IntegerScaler.Rect, presenting drawable: (any MTLDrawable)? = nil
+  ) throws {
+    let source = try surfaceTexture(for: surface)
+    let scale = SIMD2<Float>(
+      Float(frameWidth) / Float(source.width), Float(frameHeight) / Float(source.height))
+    try encode(
+      source: source, uvScale: scale, into: target,
+      destination: destination, presenting: drawable)
+  }
+
+  private func encode(
+    source: MTLTexture, uvScale: SIMD2<Float>, into target: MTLTexture,
+    destination: IntegerScaler.Rect, presenting drawable: (any MTLDrawable)?
+  ) throws {
     let pass = MTLRenderPassDescriptor()
     pass.colorAttachments[0].texture = target
     pass.colorAttachments[0].loadAction = .clear
@@ -87,6 +113,8 @@ public final class MetalPresenter {
     else { throw RenderError.commandCreationFailed }
 
     encoder.setRenderPipelineState(pipeline)
+    var uvScale = uvScale
+    encoder.setVertexBytes(&uvScale, length: MemoryLayout<SIMD2<Float>>.size, index: 0)
     encoder.setViewport(
       MTLViewport(
         originX: Double(destination.x), originY: Double(destination.y),
@@ -102,6 +130,23 @@ public final class MetalPresenter {
     }
     commands.commit()
     commands.waitUntilCompleted()
+  }
+
+  private var surfaceBackedTexture: MTLTexture?
+  private var surfaceBackedID: UInt32 = ~0
+
+  private func surfaceTexture(for surface: IOSurface) throws -> MTLTexture {
+    let id = IOSurfaceGetID(unsafeBitCast(surface, to: IOSurfaceRef.self))
+    if let existing = surfaceBackedTexture, surfaceBackedID == id { return existing }
+    let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+      pixelFormat: .bgra8Unorm, width: IOSurfaceGetWidth(surface),
+      height: IOSurfaceGetHeight(surface), mipmapped: false)
+    descriptor.usage = [.shaderRead]
+    guard let texture = device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0)
+    else { throw RenderError.textureCreationFailed }
+    surfaceBackedTexture = texture
+    surfaceBackedID = id
+    return texture
   }
 
   private func sourceTexture(width: Int, height: Int) throws -> MTLTexture {
