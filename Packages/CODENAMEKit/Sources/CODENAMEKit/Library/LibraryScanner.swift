@@ -41,10 +41,11 @@ public enum LibraryScanner {
       // Symlinked files were skipped above, so resolving only affects ancestors.
       let filePath = url.resolvingSymlinksInPath().path
       guard filePath.hasPrefix(rootPath + "/") else { continue }
+      let baseName = url.deletingPathExtension().lastPathComponent
       games.append(
         ScannedGame(
           relativePath: String(filePath.dropFirst(rootPath.count + 1)),
-          displayName: url.deletingPathExtension().lastPathComponent,
+          displayName: TitleNormalizer.normalize(filename: baseName).displayTitle,
           ext: ext))
     }
     return hidingCueTracks(games.sorted { $0.relativePath < $1.relativePath }, root: root)

@@ -34,6 +34,19 @@ private func writeTestPNG(to url: URL, width: Int = 64, height: Int = 48) throws
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
   }
 
+  @Test func importMatchesDumpNamedArtToNormalizedEntry() throws {
+    // Entry displays the normalized title; the art folder uses full dump
+    // names — they must still pair up.
+    let folder = root.appendingPathComponent("art-in", isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    try writeTestPNG(to: folder.appendingPathComponent("Zelda, The (USA) (Rev 1).png"))
+    let entry = GameEntry(
+      id: UUID(), sourceID: nil, relativePath: "Zelda, The (USA) (Rev 1).sfc", bookmark: nil,
+      displayName: "The Zelda", coreID: "snes9x", addedAt: .now, lastPlayedAt: nil)
+    #expect(store.importMatching(folder: folder, entries: [entry]) == 1)
+    #expect(store.artworkURL(for: entry.id) != nil)
+  }
+
   @Test func importsAndNormalizesImage() throws {
     let source = root.appendingPathComponent("cover.png")
     try writeTestPNG(to: source, width: 1200, height: 900)
