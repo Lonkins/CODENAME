@@ -113,19 +113,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
   private static let maxContentBytes = 64 * 1024 * 1024
 
   private func openContent(at url: URL) {
-    let size =
-      (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? nil
-    if let size, size > Self.maxContentBytes {
-      let alert = NSAlert()
-      alert.messageText = "File is too large to be cartridge content"
-      alert.runModal()
-      return
-    }
     guard let entry = catalog.core(forExtension: url.pathExtension) else {
       let alert = NSAlert()
       alert.messageText = "No bundled core plays “.\(url.pathExtension)” files"
       alert.informativeText =
         "Supported types: \(catalog.allExtensions.map { ".\($0)" }.joined(separator: ", "))"
+      alert.runModal()
+      return
+    }
+    // The cartridge cap protects the slurping load path; need_fullpath
+    // cores stream disc-sized content from disk themselves (ADR 0007).
+    let size =
+      (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? nil
+    if !entry.needsFullPath, let size, size > Self.maxContentBytes {
+      let alert = NSAlert()
+      alert.messageText = "File is too large to be cartridge content"
       alert.runModal()
       return
     }

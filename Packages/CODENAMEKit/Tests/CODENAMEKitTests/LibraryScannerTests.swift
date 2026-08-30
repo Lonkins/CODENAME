@@ -20,6 +20,39 @@ import Testing
       withDestinationURL: sub.appendingPathComponent("Mario.sfc"))
   }
 
+  @Test func cueParserExtractsQuotedFilenames() {
+    let cue = """
+      FILE "Game (USA) (Track 1).bin" BINARY
+        TRACK 01 MODE2/2352
+      file "Game (USA) (Track 2).bin" BINARY
+      REM COMMENT "not a file line"
+      """
+    #expect(
+      LibraryScanner.cueReferencedFiles(cue) == [
+        "Game (USA) (Track 1).bin", "Game (USA) (Track 2).bin",
+      ])
+  }
+
+  @Test func hidesDiscTracksReferencedBySiblingCue() throws {
+    let disc = root.appendingPathComponent("disc", isDirectory: true)
+    try FileManager.default.createDirectory(at: disc, withIntermediateDirectories: true)
+    try Data(
+      """
+      FILE "Crash (USA).bin" BINARY
+        TRACK 01 MODE2/2352
+      """.utf8
+    ).write(to: disc.appendingPathComponent("Crash (USA).cue"))
+    try Data("t".utf8).write(to: disc.appendingPathComponent("Crash (USA).bin"))
+    try Data("g".utf8).write(to: disc.appendingPathComponent("Cartridge.bin"))
+
+    let games = LibraryScanner.scan(root: root, extensions: ["cue", "bin"])
+    let paths = games.map(\.relativePath)
+    #expect(paths.contains("disc/Crash (USA).cue"))
+    #expect(!paths.contains("disc/Crash (USA).bin"))
+    // A .bin no cue references (a cartridge dump) still lists.
+    #expect(paths.contains("disc/Cartridge.bin"))
+  }
+
   @Test func findsMatchingFilesRecursively() {
     let games = LibraryScanner.scan(root: root, extensions: ["md", "sfc"])
     let paths = games.map(\.relativePath).sorted()
