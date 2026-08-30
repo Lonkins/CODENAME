@@ -6,6 +6,20 @@ Releases are produced by `.github/workflows/release.yml` on any `v*` tag:
 git tag vX.Y.Z && git push origin vX.Y.Z
 ```
 
+## Pre-tag gate
+
+Before pushing a tag, on a machine with local test content:
+
+1. `Scripts/build-cores.sh` — fresh cores from the pinned SHAs.
+2. `swift build --package-path Packages/CODENAMEKit --product conformance-runner`
+3. `Scripts/conformance.sh` with the `CONFORMANCE_*` env vars set (see
+   `Scripts/conformance-hashes.txt`) — every non-skipped row must PASS in
+   both modes. A hash mismatch means behavior changed: understand it before
+   releasing, and re-record goldens only for a deliberate core bump.
+
+Remember that publishing a release also publishes it to the Sparkle appcast:
+existing installs will be offered the update once the appcast job runs.
+
 The workflow builds `CODENAME.app` (arm64, sandboxed), signs it with Developer ID, notarizes and staples the app and the `.dmg`, and attaches `CODENAME-X.Y.Z.dmg` + a SHA-256 checksum to a GitHub release. All logic lives in `Scripts/make-release.sh`, which is runnable locally.
 
 ## Dry-run mode (current default)
