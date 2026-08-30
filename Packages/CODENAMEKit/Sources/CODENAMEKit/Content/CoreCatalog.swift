@@ -22,8 +22,11 @@ public struct CoreCatalog {
   /// Scans `*.dylib` in the directory (sorted by filename for deterministic
   /// collision order), loading each through the trust policy to read its
   /// info. `helperOnlyDirectory` entries are described by .info sidecars
-  /// instead — those dylibs never load in this process.
-  public init(pluginsDirectory: URL, helperOnlyDirectory: URL? = nil) {
+  /// instead — those dylibs never load in this process. Sidecars live in
+  /// `sidecarDirectory` (Resources in the app bundle: data in PlugIns would
+  /// break the code seal), defaulting to the dylib directory for dev trees.
+  public init(pluginsDirectory: URL, helperOnlyDirectory: URL? = nil, sidecarDirectory: URL? = nil)
+  {
     let policy = CoreTrustPolicy(allowedDirectory: pluginsDirectory)
     let listing =
       (try? FileManager.default.contentsOfDirectory(

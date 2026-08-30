@@ -21,6 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
   private lazy var catalog = CoreCatalog(
     pluginsDirectory: Bundle.main.builtInPlugInsURL ?? URL(fileURLWithPath: "/nonexistent"),
     helperOnlyDirectory: Bundle.main.builtInPlugInsURL?
+      .appendingPathComponent("HelperOnly", isDirectory: true),
+    sidecarDirectory: Bundle.main.resourceURL?
       .appendingPathComponent("HelperOnly", isDirectory: true))
   private let updaterController = SPUStandardUpdaterController(
     startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
