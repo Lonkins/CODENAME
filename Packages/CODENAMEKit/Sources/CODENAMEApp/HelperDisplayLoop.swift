@@ -19,7 +19,8 @@ final class HelperDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
   private var audioRing: SPSCRingBuffer?
   private var audioOutput: CoreAudioOutput?
   private var aspectRatio = 4.0 / 3.0
-  private var vblanksPerFrame = 1
+  private var frameClock = FramePacer.FrameClock(
+    mode: .videoMaster(vblanksPerFrame: 1), coreFPS: 60, displayRefresh: 60)
   private var vblankCount = 0
   private var paceFrameCount = 0
   private var paceWindowStart = 0.0
@@ -209,12 +210,12 @@ final class HelperDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     }
 
     let mode = FramePacer.mode(coreFPS: av.framesPerSecond, displayRefresh: displayRefresh)
-    if case .videoMaster(let vblanks) = mode {
-      vblanksPerFrame = vblanks
-    }
+    frameClock = FramePacer.FrameClock(
+      mode: mode, coreFPS: av.framesPerSecond, displayRefresh: displayRefresh)
     NSLog(
-      "helper pacing: core %.4ffps, display %.0fHz, %d vblank(s)/frame",
-      av.framesPerSecond, displayRefresh, vblanksPerFrame)
+      "helper pacing: core %.4ffps, display %.0fHz, %.4f frame(s)/vblank, %@",
+      av.framesPerSecond, displayRefresh, frameClock.framesPerVblank,
+      mode == .audioMaster ? "audio-master" : "video-master")
 
     let displayLink = CAMetalDisplayLink(metalLayer: layer)
     displayLink.delegate = self
@@ -230,16 +231,19 @@ final class HelperDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     if vblankCount == 1 {
       NSLog("helper display link first callback")
     }
-    if vblankCount % vblanksPerFrame == 0 {
+    let framesDue = frameClock.framesDue()
+    if framesDue > 0 {
       let ring = audioRing
       let output = audioOutput
-      _ = session.runFrame { audio in
-        guard let ring else { return }
-        audio.withUnsafeBytes { raw in
-          let samples = raw.bindMemory(to: Int16.self)
-          _ = ring.write(Array(samples))
+      for _ in 0..<framesDue {
+        _ = session.runFrame { audio in
+          guard let ring else { return }
+          audio.withUnsafeBytes { raw in
+            let samples = raw.bindMemory(to: Int16.self)
+            _ = ring.write(Array(samples))
+          }
+          output?.updateRateControl()
         }
-        output?.updateRateControl()
       }
 
       framesSinceFlush += 1
@@ -250,7 +254,7 @@ final class HelperDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
 
       // Positive pace signal, same discipline as the in-process loop:
       // silence is never proof a loop is alive.
-      paceFrameCount += 1
+      paceFrameCount += framesDue
       let now = CACurrentMediaTime()
       if paceWindowStart == 0 { paceWindowStart = now }
       if now - paceWindowStart >= 5 {

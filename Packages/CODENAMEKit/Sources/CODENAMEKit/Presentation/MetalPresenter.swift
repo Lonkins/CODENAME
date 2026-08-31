@@ -8,6 +8,8 @@ public final class MetalPresenter {
   public enum RenderError: Error {
     case commandCreationFailed
     case textureCreationFailed
+    /// The core reported geometry its own framebuffer cannot hold.
+    case invalidGeometry
   }
 
   public let device: MTLDevice
@@ -66,9 +68,11 @@ public final class MetalPresenter {
     frame: CoreSession.VideoFrame, into target: MTLTexture, destination: IntegerScaler.Rect,
     presenting drawable: (any MTLDrawable)? = nil
   ) throws {
-    let bgra = PixelConverter.toBGRA8(
-      bytes: frame.bytes, width: frame.width, height: frame.height,
-      pitch: frame.pitch, format: frame.pixelFormat)
+    guard
+      let bgra = PixelConverter.toBGRA8(
+        bytes: frame.bytes, width: frame.width, height: frame.height,
+        pitch: frame.pitch, format: frame.pixelFormat)
+    else { throw RenderError.invalidGeometry }
 
     let source = try sourceTexture(width: frame.width, height: frame.height)
     bgra.withUnsafeBytes { buffer in
