@@ -104,4 +104,39 @@ struct HelperSessionTests {
     #expect(av == nil)
     #expect(session.surface == nil)
   }
+
+  // MARK: - The helper going away (ADR 0006: "session died" is recoverable)
+
+  @Test func aDeadHelperIsReportedInsteadOfFreezingTheSession() throws {
+    let host = LoopbackCoreHost()
+    let session = try openSession(host)
+    let lost = DispatchSemaphore(value: 0)
+    session.onSessionLost = { lost.signal() }
+
+    // A frame in flight when the helper dies: its reply never runs, so the
+    // in-flight guard used to stay set forever and every later frame was
+    // silently refused — a window frozen on its last frame, no error.
+    _ = session.runFrame { _ in }
+    host.invalidate()
+
+    #expect(lost.wait(timeout: .now() + 5) == .success)
+    #expect(session.isAlive == false)
+    #expect(session.runFrame { _ in } == .sessionLost)
+  }
+
+  @Test func closingADeadSessionDoesNotWaitForTheReplyTimeout() throws {
+    let host = LoopbackCoreHost()
+    let session = try openSession(host)
+    let lost = DispatchSemaphore(value: 0)
+    session.onSessionLost = { lost.signal() }
+    host.invalidate()
+    #expect(lost.wait(timeout: .now() + 5) == .success)
+
+    // Closing the game window walked two 10-second timeouts (save-RAM flush,
+    // then close) with the main thread blocked behind them.
+    let started = Date()
+    #expect(session.saveRAMSnapshot() == nil)
+    session.close()
+    #expect(Date().timeIntervalSince(started) < 1)
+  }
 }
