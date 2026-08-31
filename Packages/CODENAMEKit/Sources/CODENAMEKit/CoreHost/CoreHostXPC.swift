@@ -322,6 +322,12 @@ public final class LoopbackCoreHost: NSObject, NSXPCListenerDelegate, @unchecked
   ) -> Bool {
     newConnection.exportedInterface = CoreHostWire.interface()
     newConnection.exportedObject = service
+    newConnection.invalidationHandler = { [service] in
+      // The peer is gone and the helper hosts one session at a time: a
+      // session it opened could otherwise never be closed, keeping a core
+      // and its content loaded for the life of the process.
+      service.closeSession {}
+    }
     newConnection.resume()
     return true
   }
