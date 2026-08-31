@@ -28,10 +28,12 @@ struct CoreLibraryTests {
     #expect(String(cString: info.library_version) == "1.0")
   }
 
-  @Test func rejectsLibraryMissingRetroSymbols() {
+  @Test func rejectsSomethingThatIsNotACoreImage() {
+    // A system library lives in the dyld shared cache, not on disk, so the
+    // structural check refuses the path before dlopen is ever asked.
     let libz = URL(fileURLWithPath: "/usr/lib/libz.dylib")
     let permissive = CoreTrustPolicy(allowedDirectory: URL(fileURLWithPath: "/usr/lib"))
-    #expect(throws: (any Error).self) {
+    #expect(throws: LoadError.notALoadableImage(libz.path)) {
       try CoreLibrary(url: libz, policy: permissive)
     }
   }

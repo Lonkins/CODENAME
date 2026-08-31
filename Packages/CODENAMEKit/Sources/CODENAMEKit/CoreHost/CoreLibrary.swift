@@ -32,6 +32,7 @@ public final class CoreLibrary {
 
   public init(url: URL, policy: CoreTrustPolicy) throws(LoadError) {
     try policy.validate(url)
+    guard MachOImage.isLoadable(at: url) else { throw .notALoadableImage(url.path) }
 
     guard let handle = dlopen(url.path, RTLD_NOW | RTLD_LOCAL) else {
       let reason = dlerror().map { String(cString: $0) } ?? "unknown dlopen failure"
