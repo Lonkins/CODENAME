@@ -20,6 +20,7 @@ static uint16_t framebuffer[FRAME_W * FRAME_H];
 static uint8_t state[STATE_SIZE];
 static uint8_t sram[SRAM_SIZE];
 static unsigned frame_count;
+static uint16_t option_echo;
 
 RETRO_API unsigned retro_api_version(void) { return RETRO_API_VERSION; }
 
@@ -29,6 +30,23 @@ RETRO_API void retro_set_environment(retro_environment_t cb) {
   cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &fmt);
   bool no_game = true;
   cb(RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME, &no_game);
+  // Declares one option so hosts can verify the option contract end to end;
+  // its resolved value is echoed into the framebuffer by retro_run.
+  struct retro_variable vars[] = {
+    {"testcore_echo", "Echo value; 0|7|9"},
+    {NULL, NULL},
+  };
+  cb(RETRO_ENVIRONMENT_SET_VARIABLES, vars);
+}
+
+// Reads the host's answer for the declared option. Cores do this on load and
+// whenever the host reports an update.
+static void refresh_options(void) {
+  struct retro_variable var;
+  var.key = "testcore_echo";
+  var.value = NULL;
+  if (env_cb && env_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+    option_echo = (uint16_t)atoi(var.value);
 }
 
 RETRO_API void retro_set_video_refresh(retro_video_refresh_t cb) { video_cb = cb; }
@@ -60,6 +78,7 @@ RETRO_API void retro_get_system_av_info(struct retro_system_av_info *info) {
 
 RETRO_API bool retro_load_game(const struct retro_game_info *game) {
   (void)game;
+  refresh_options();
   // Test knob: pretend to be a hardware-rendered core so the host's
   // rejection path can be exercised without a real GL/Vulkan core.
   if (getenv("TEST_CORE_REQUEST_HW") && env_cb) {
@@ -75,12 +94,17 @@ RETRO_API void retro_unload_game(void) {}
 
 RETRO_API void retro_run(void) {
   if (input_poll_cb) input_poll_cb();
+  bool updated = false;
+  if (env_cb && env_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &updated) && updated)
+    refresh_options();
   frame_count++;
   for (unsigned i = 0; i < FRAME_W * FRAME_H; i++) framebuffer[i] = (uint16_t)(frame_count & 0xffff);
   sram[0] = (uint8_t)frame_count;  // lets hosts verify save-RAM snapshots change
   // Pixel 1 echoes the B button so hosts can verify input through the ABI.
   if (input_state_cb)
     framebuffer[1] = (uint16_t)input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B);
+  // Pixel 2 echoes the resolved core option, the same way pixel 1 echoes input.
+  framebuffer[2] = option_echo;
   if (video_cb) video_cb(framebuffer, FRAME_W, FRAME_H, FRAME_W * sizeof(uint16_t));
   if (audio_batch_cb) {
     static int16_t silence[735 * 2];
