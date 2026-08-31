@@ -8,6 +8,7 @@ import UniformTypeIdentifiers
 // Conformance check as a plain executable so it runs on toolchains without
 // the swift-testing runtime. Content paths come from arguments only.
 // Usage: conformance-runner --core <dylib> --content <file> [--frames N] [--expected-hash H]
+// [--list-options] prints every core option the core declared.
 
 func fail(_ message: String) -> Never {
   FileHandle.standardError.write(Data(("error: " + message + "\n").utf8))
@@ -20,6 +21,7 @@ var frames = 300
 var expectedHash: String?
 var dumpPath: String?
 var useHelper = false
+var listOptions = false
 var systemDir = FileManager.default.temporaryDirectory.path
 
 var arguments = Array(CommandLine.arguments.dropFirst()).makeIterator()
@@ -31,6 +33,7 @@ while let flag = arguments.next() {
   case "--expected-hash": expectedHash = arguments.next()
   case "--dump-frame": dumpPath = arguments.next()
   case "--helper": useHelper = true
+  case "--list-options": listOptions = true
   case "--system-dir": systemDir = arguments.next() ?? systemDir
   default: fail("unknown argument \(flag)")
   }
@@ -164,6 +167,13 @@ do {
   print("core: \(coreURL.lastPathComponent)")
   let size = "\(av.baseSize.width)x\(av.baseSize.height)"
   print("av: \(size) @ \(av.framesPerSecond)fps, \(av.audioSampleRate)Hz")
+  let declared = environment.options.definitions
+  print("options: \(declared.count) declared")
+  if listOptions {
+    for option in declared {
+      print("  \(option.key) = \(option.defaultValue) of \(option.values.count)")
+    }
+  }
 
   session.run(frames: frames)
   let audioSamples = session.drainAudioSamples().count
