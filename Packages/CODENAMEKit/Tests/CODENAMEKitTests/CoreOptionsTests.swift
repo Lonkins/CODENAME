@@ -242,6 +242,20 @@ private final class OptionsV1Block {
         == "raw")
   }
 
+  @Test func v2DefinitionWithNoValuesIsIgnored() {
+    let block = OptionsV2Block([(key: "k", desc: "K", values: [], default: nil)])
+    #expect(CoreOptions.definitions(fromV2: block.pointer).isEmpty)
+  }
+
+  @Test func v2EmptyDescriptionSurvivesAsAnEmptyTitle() {
+    // The interface calls desc required, but a core that ships an empty one is
+    // still usable — the option keeps working and simply displays no title.
+    let block = OptionsV2Block([(key: "k", desc: "", values: [("a", nil)], default: "a")])
+    let parsed = CoreOptions.definitions(fromV2: block.pointer)
+    #expect(parsed.map(\.key) == ["k"])
+    #expect(parsed.first?.title == "")
+  }
+
   // MARK: - v1 definitions (SET_CORE_OPTIONS)
 
   @Test func v1DefinitionsCarryLabelsAndDeclaredDefault() {
@@ -364,6 +378,34 @@ private final class OptionsV1Block {
     let options = CoreOptions()
     options.declare([twoValueOption])
     options.setValue("a", for: "k")
+    #expect(!options.takeUpdateFlag())
+  }
+
+  @Test func redeclaringWithNoChangeRaisesNoUpdate() {
+    let options = CoreOptions()
+    options.declare([twoValueOption])
+    options.setValue("b", for: "k")
+    _ = options.takeUpdateFlag()
+    options.declare([twoValueOption])
+    #expect(!options.takeUpdateFlag())
+  }
+
+  @Test func redeclaringThatDropsAChoiceRaisesUpdate() {
+    // The core is still holding the value it last read; a silent revert would
+    // leave it running on a setting the frontend no longer believes in.
+    let options = CoreOptions()
+    options.declare([twoValueOption])
+    options.setValue("b", for: "k")
+    _ = options.takeUpdateFlag()
+    options.declare([
+      CoreOption(key: "k", title: "K", values: [CoreOptionValue(value: "a")], defaultValue: "a")
+    ])
+    #expect(options.takeUpdateFlag())
+  }
+
+  @Test func firstDeclarationRaisesNoUpdate() {
+    let options = CoreOptions()
+    options.declare([twoValueOption])
     #expect(!options.takeUpdateFlag())
   }
 
@@ -523,6 +565,65 @@ private final class OptionsV1Block {
       handler.handle(command: UInt32(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2_INTL), data: $0)
     }
     #expect(handler.options.definitions.map(\.key) == ["psx_renderer"])
+  }
+
+  @Test func getVariableReflectsALaterChange() {
+    // Reads the value twice around a change: the first read caches a C string,
+    // and a cache that is not invalidated would hand the core the old one.
+    let handler = makeHandler()
+    let block = VariableBlock([("foo_speedhack", "Speed hack; false|true")])
+    _ = setVariables(handler, block)
+    #expect(getVariable(handler, key: "foo_speedhack").value == "false")
+    handler.options.setValue("true", for: "foo_speedhack")
+    #expect(getVariable(handler, key: "foo_speedhack").value == "true")
+  }
+
+  @Test func getVariableUpdateIsAvailable() {
+    let handler = makeHandler()
+    var updated = false
+    let handled = withUnsafeMutablePointer(to: &updated) {
+      handler.handle(command: UInt32(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE), data: $0)
+    }
+    #expect(handled)
+  }
+
+  @Test func nullDeclarationsAreAcceptedAndClearTheOptions() {
+    // Every SET_* option command documents NULL data as legal.
+    for command in [
+      RETRO_ENVIRONMENT_SET_CORE_OPTIONS, RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL,
+      RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2, RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2_INTL,
+    ] {
+      let handler = makeHandler()
+      let block = VariableBlock([("foo", "Foo; a|b")])
+      _ = setVariables(handler, block)
+      _ = handler.handle(command: UInt32(command), data: nil)
+      #expect(handler.options.definitions.isEmpty)
+    }
+  }
+
+  @Test func nullVariablesDeclarationLeavesOptionsAlone() {
+    // SET_VARIABLES documents NULL as "still available", not as a reset.
+    let handler = makeHandler()
+    let block = VariableBlock([("foo", "Foo; a|b")])
+    _ = setVariables(handler, block)
+    #expect(handler.handle(command: UInt32(RETRO_ENVIRONMENT_SET_VARIABLES), data: nil))
+    #expect(handler.options.definitions.map(\.key) == ["foo"])
+  }
+
+  @Test func everyOptionCommandIsHandledNotCounted() {
+    let handler = makeHandler()
+    var scratch: UInt32 = 0
+    for command in [
+      RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, RETRO_ENVIRONMENT_SET_VARIABLES,
+      RETRO_ENVIRONMENT_SET_CORE_OPTIONS, RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL,
+      RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2, RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2_INTL,
+      RETRO_ENVIRONMENT_GET_VARIABLE, RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE,
+    ] {
+      _ = withUnsafeMutablePointer(to: &scratch) {
+        handler.handle(command: UInt32(command), data: $0)
+      }
+    }
+    #expect(handler.unknownCommandCount == 0)
   }
 
   @Test func optionCommandsAreNotCountedAsUnknown() {
