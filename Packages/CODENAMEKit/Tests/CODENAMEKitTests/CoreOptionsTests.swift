@@ -192,8 +192,9 @@ private final class OptionsV2Block {
     let block = OptionsV2Block([
       (key: "k", desc: "K", values: [("raw", nil)], default: "raw")
     ])
-    #expect(CoreOptions.definitions(fromV2: block.pointer).first?.values.first?.displayLabel
-      == "raw")
+    #expect(
+      CoreOptions.definitions(fromV2: block.pointer).first?.values.first?.displayLabel
+        == "raw")
   }
 
   // MARK: - Selection

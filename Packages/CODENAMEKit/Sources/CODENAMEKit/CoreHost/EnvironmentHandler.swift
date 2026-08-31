@@ -9,6 +9,10 @@ public final class EnvironmentHandler {
   public private(set) var hardwareRenderRequested = false
   public private(set) var unknownCommandCount = 0
 
+  /// What the loaded core declared it can be configured with, and what it
+  /// reads back through `GET_VARIABLE`.
+  public let options = CoreOptions()
+
   private let systemDirectoryCString: UnsafeMutablePointer<CChar>
   private let saveDirectoryCString: UnsafeMutablePointer<CChar>
   private let jitCapable: Bool
@@ -60,12 +64,53 @@ public final class EnvironmentHandler {
       hardwareRenderRequested = true
       return false
 
-    case RETRO_ENVIRONMENT_SET_VARIABLES:
-      // ponytail: variables accepted but unstored; core options UI comes with the library UI phase.
+    case RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION:
+      data?.assumingMemoryBound(to: UInt32.self).pointee = 2
       return true
 
-    case RETRO_ENVIRONMENT_GET_VARIABLE, RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE:
+    case RETRO_ENVIRONMENT_SET_VARIABLES:
+      guard let data else { return true }
+      options.declare(
+        CoreOptions.definitions(fromVariables: data.assumingMemoryBound(to: retro_variable.self)))
+      return true
+
+    case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2:
+      // The return value advertises *category* support, not success: the
+      // options register either way, and this frontend has no category UI.
+      guard let data else {
+        options.declare([])
+        return false
+      }
+      options.declare(
+        CoreOptions.definitions(
+          fromV2: data.assumingMemoryBound(to: retro_core_options_v2.self)))
       return false
+
+    case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2_INTL:
+      // Cores built with translations call this instead of the plain v2 form;
+      // ignoring it would leave most modern cores with no options at all.
+      guard let data,
+        let english = data.assumingMemoryBound(to: retro_core_options_v2_intl.self).pointee.us
+      else {
+        options.declare([])
+        return false
+      }
+      options.declare(CoreOptions.definitions(fromV2: english))
+      return false
+
+    case RETRO_ENVIRONMENT_GET_VARIABLE:
+      // Available means available: a key that was never declared is answered
+      // with a NULL value, not with a refusal. NULL data is a support probe.
+      guard let data else { return true }
+      let variable = data.assumingMemoryBound(to: retro_variable.self)
+      variable.pointee.value =
+        variable.pointee.key
+        .map { options.cString(for: String(cString: $0)) } ?? nil
+      return true
+
+    case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE:
+      data?.assumingMemoryBound(to: Bool.self).pointee = options.takeUpdateFlag()
+      return true
 
     case RETRO_ENVIRONMENT_GET_JIT_CAPABLE:
       guard jitCapable else { return false }
