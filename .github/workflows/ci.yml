@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Called by the release workflow: a tag ships only what this job passes.
+  workflow_call:
 
 concurrency:
   group: ci-${{ github.ref }}

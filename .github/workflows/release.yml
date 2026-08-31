@@ -4,20 +4,44 @@ on:
   push:
     tags: ["v*"]
 
-permissions:
-  contents: write
-  pages: write
-  id-token: write
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
+  # A tag used to ship whatever commit it pointed at, unverified.
+  verify:
+    name: Verify
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
   release:
     name: Sign, notarize, package
+    needs: verify
     runs-on: macos-latest
+    permissions:
+      contents: write
+    outputs:
+      appcast: ${{ steps.appcast-gate.outputs.publish }}
     env:
       HAVE_SIGNING: ${{ secrets.MACOS_CERT_P12_BASE64 != '' }}
       HAVE_SPARKLE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY != '' }}
     steps:
       - uses: actions/checkout@v4
+
+      # An unsigned dry-run build must never reach the stable update feed:
+      # Sparkle would offer it to every existing install, and it cannot pass
+      # Gatekeeper. Signing gates the appcast as well as the key.
+      - name: Decide whether this build may reach the update feed
+        id: appcast-gate
+        run: |
+          if [ "$HAVE_SIGNING" = "true" ] && [ "$HAVE_SPARKLE_KEY" = "true" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "no appcast item: signing=$HAVE_SIGNING sparkle-key=$HAVE_SPARKLE_KEY"
+          fi
 
       - name: Import Developer ID certificate
         if: env.HAVE_SIGNING == 'true'
@@ -88,7 +112,7 @@ jobs:
           fi
 
       - name: Generate appcast
-        if: env.HAVE_SPARKLE_KEY == 'true'
+        if: steps.appcast-gate.outputs.publish == 'true'
         env:
           SPARKLE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
         run: |
@@ -98,7 +122,7 @@ jobs:
           rm "$RUNNER_TEMP/sparkle_ed_key"
 
       - name: Upload Pages artifact
-        if: env.HAVE_SPARKLE_KEY == 'true'
+        if: steps.appcast-gate.outputs.publish == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: build/site
@@ -110,6 +134,10 @@ jobs:
   publish-appcast:
     name: Publish appcast to Pages
     needs: release
+    if: needs.release.outputs.appcast == 'true'
+    permissions:
+      pages: write
+      id-token: write
     runs-on: ubuntu-latest
     environment:
       name: github-pages

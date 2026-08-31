@@ -13,12 +13,21 @@ Before pushing a tag, on a machine with local test content:
 1. `Scripts/build-cores.sh` — fresh cores from the pinned SHAs.
 2. `swift build --package-path Packages/CODENAMEKit --product conformance-runner`
 3. `Scripts/conformance.sh` with the `CONFORMANCE_*` env vars set (see
-   `Scripts/conformance-hashes.txt`) — every non-skipped row must PASS in
-   both modes. A hash mismatch means behavior changed: understand it before
-   releasing, and re-record goldens only for a deliberate core bump.
+   `Scripts/conformance-hashes.txt`) — every row must PASS in both modes. A
+   skipped row fails the script, because a gate that skipped everything
+   passes while verifying nothing; `CONFORMANCE_ALLOW_SKIP=1` is the
+   deliberate escape hatch for a partial spot check. A hash mismatch means
+   behavior changed: understand it before releasing, and re-record goldens
+   only for a deliberate core bump.
 
-Remember that publishing a release also publishes it to the Sparkle appcast:
-existing installs will be offered the update once the appcast job runs.
+The tag itself now runs build, test and lint before anything is packaged, so
+a red commit produces no release. Conformance stays a local pre-tag step:
+it needs content that never enters CI.
+
+Publishing a release publishes to the Sparkle appcast **only when the build
+is signed** — an unsigned dry run produces a prerelease and leaves the stable
+feed alone, so existing installs are never offered a build that cannot pass
+Gatekeeper.
 
 The workflow builds `CODENAME.app` (arm64, sandboxed), signs it with Developer ID, notarizes and staples the app and the `.dmg`, and attaches `CODENAME-X.Y.Z.dmg` + a SHA-256 checksum to a GitHub release. All logic lives in `Scripts/make-release.sh`, which is runnable locally.
 
