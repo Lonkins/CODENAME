@@ -13,7 +13,7 @@ private let testCorePath = ProcessInfo.processInfo.environment["TEST_CORE_PATH"]
 struct CoreOptionEchoTests {
   private var coreURL: URL { URL(fileURLWithPath: testCorePath ?? "/nonexistent") }
 
-  private func session(seeding options: [String: String]) throws -> (
+  private func makeSession(seeding options: [String: String]) throws -> (
     session: CoreSession, environment: EnvironmentHandler
   ) {
     let environment = EnvironmentHandler(
@@ -34,7 +34,7 @@ struct CoreOptionEchoTests {
   }
 
   @Test func aCoreWithNoStoredSelectionReadsItsDeclaredDefault() throws {
-    let (session, _) = try session(seeding: [:])
+    let (session, _) = try makeSession(seeding: [:])
     defer { session.shutdown() }
     try session.loadGame(path: nil)
     session.run(frames: 1)
@@ -42,7 +42,7 @@ struct CoreOptionEchoTests {
   }
 
   @Test func aStoredSelectionReachesTheCoreThroughTheABI() throws {
-    let (session, _) = try session(seeding: ["testcore_echo": "7"])
+    let (session, _) = try makeSession(seeding: ["testcore_echo": "7"])
     defer { session.shutdown() }
     try session.loadGame(path: nil)
     session.run(frames: 1)
@@ -52,7 +52,7 @@ struct CoreOptionEchoTests {
   @Test func aChangeMidSessionReachesTheCoreOnTheNextFrame() throws {
     // Exercises the update flag the whole way round: the core only re-reads
     // because the frontend told it something changed.
-    let (session, environment) = try session(seeding: [:])
+    let (session, environment) = try makeSession(seeding: [:])
     defer { session.shutdown() }
     try session.loadGame(path: nil)
     session.run(frames: 1)
