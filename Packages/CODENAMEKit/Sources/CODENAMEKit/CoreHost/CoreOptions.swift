@@ -4,7 +4,7 @@ import Foundation
 /// One selectable value for a core option. `label` is the display text the v2
 /// interface lets a core supply; the older variables grammar has none, and the
 /// raw value is shown instead.
-public struct CoreOptionValue: Equatable, Sendable {
+public struct CoreOptionValue: Codable, Equatable, Sendable {
   public let value: String
   public let label: String?
 
@@ -18,7 +18,7 @@ public struct CoreOptionValue: Equatable, Sendable {
 
 /// A core option: the key the core queries, its human-readable title, the
 /// values it accepts, and the value that applies until the user picks another.
-public struct CoreOption: Equatable, Sendable {
+public struct CoreOption: Codable, Equatable, Sendable {
   public let key: String
   public let title: String
   public let values: [CoreOptionValue]
@@ -270,5 +270,17 @@ public enum CoreOptionsStore {
       let values = try? JSONDecoder().decode([String: String].self, from: data)
     else { return [:] }
     return values
+  }
+}
+
+/// What a core declared and what the frontend resolved, as one payload — the
+/// shape the app reads back from a helper-hosted session.
+public struct CoreOptionsSnapshot: Codable, Equatable, Sendable {
+  public let options: [CoreOption]
+  public let selected: [String: String]
+
+  public init(options: [CoreOption], selected: [String: String]) {
+    self.options = options
+    self.selected = selected
   }
 }

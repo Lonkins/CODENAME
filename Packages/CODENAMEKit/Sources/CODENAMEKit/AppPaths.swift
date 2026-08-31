@@ -12,6 +12,12 @@ public enum AppPaths {
   public static var mappings: URL { base.appendingPathComponent("Mappings", isDirectory: true) }
   public static var options: URL { base.appendingPathComponent("Options", isDirectory: true) }
 
+  /// The option-selection file for a core, named after the core the way the
+  /// per-core mapping files are.
+  public static func optionsFile(forCore coreURL: URL) -> URL {
+    options.appendingPathComponent(coreURL.deletingPathExtension().lastPathComponent + ".json")
+  }
+
   /// Creates the standard directories; safe to call repeatedly.
   public static func ensureExists() {
     for url in [system, saves, mappings, options] {

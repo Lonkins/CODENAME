@@ -161,10 +161,23 @@ final class HelperDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     guard
       let av = session.open(
         corePath: coreURL.path, contentPath: contentPath,
-        systemDirectory: AppPaths.system.path, saveDirectory: AppPaths.saves.path)
+        systemDirectory: AppPaths.system.path, saveDirectory: AppPaths.saves.path,
+        options: (try? CoreOptionsStore.load(from: AppPaths.optionsFile(forCore: coreURL)))
+          ?? [:])
     else {
       NSLog("helper core load failed")
       return
+    }
+
+    // Written back with everything the core offers, matching the in-process
+    // path — a helper-hosted core's options are editable the same way.
+    if let snapshot = session.optionsSnapshot() {
+      do {
+        try CoreOptionsStore.save(
+          snapshot.selected, to: AppPaths.optionsFile(forCore: coreURL))
+      } catch {
+        NSLog("core options save failed: \(error)")
+      }
     }
     presenter = MetalPresenter()
     if av.aspectRatio > 0 { aspectRatio = av.aspectRatio }
