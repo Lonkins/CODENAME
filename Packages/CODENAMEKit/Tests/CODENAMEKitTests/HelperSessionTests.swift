@@ -17,6 +17,7 @@ struct HelperSessionTests {
     let maybeProxy = host.proxy(errorHandler: { _ in })
     let proxy = try #require(maybeProxy)
     let session = HelperSession(proxy: proxy)
+    session.bind(connection: host.clientConnection)
     let av = session.open(
       corePath: coreURL.path, contentPath: nil,
       systemDirectory: FileManager.default.temporaryDirectory.path,

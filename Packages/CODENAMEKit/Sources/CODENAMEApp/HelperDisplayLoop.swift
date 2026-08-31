@@ -33,8 +33,12 @@ final class HelperDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
   private var saveIdentity: (core: String, content: String)?
   private var lastFlushedSaveRAM: Data?
   private var framesSinceFlush = 0
+  private var reportedSessionLost = false
 
   let displaySettings: LiveDisplaySettings
+  /// Called on the main queue when the helper dies mid-session; the app
+  /// closes the window and says so rather than leaving a frozen frame.
+  var onSessionLost: (@Sendable (String) -> Void)?
 
   /// Fails only when the helper connection can't even be constructed; load
   /// failures surface as a dead session (no frames, logged) per ADR 0001's
@@ -54,7 +58,9 @@ final class HelperDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
       connection.invalidate()
       return nil
     }
-    self.session = HelperSession(proxy: remote)
+    let session = HelperSession(proxy: remote)
+    session.bind(connection: connection)
+    self.session = session
     self.layer = layer
     self.coreURL = coreURL
     self.contentPath = contentPath
@@ -85,6 +91,21 @@ final class HelperDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     guard let thread, thread.isExecuting else { return }
     perform(#selector(tearDownOnLoopThread), on: thread, with: nil, waitUntilDone: true)
     self.thread = nil
+  }
+
+  /// Once only: a helper that died cannot produce frames, so stop pacing
+  /// and hand the failure up rather than repeating the last frame forever.
+  private func reportSessionLost() {
+    guard !reportedSessionLost else { return }
+    reportedSessionLost = true
+    NSLog("helper session lost — stopping the display link")
+    displayLink?.invalidate()
+    displayLink = nil
+    audioOutput?.stop()
+    let handler = onSessionLost
+    DispatchQueue.main.async {
+      handler?("The isolation helper stopped running, so the game session ended.")
+    }
   }
 
   @objc private func tearDownOnLoopThread() {
@@ -236,13 +257,17 @@ final class HelperDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
       let ring = audioRing
       let output = audioOutput
       for _ in 0..<framesDue {
-        _ = session.runFrame { audio in
+        let outcome = session.runFrame { audio in
           guard let ring else { return }
           audio.withUnsafeBytes { raw in
             let samples = raw.bindMemory(to: Int16.self)
             _ = ring.write(Array(samples))
           }
           output?.updateRateControl()
+        }
+        if outcome == .sessionLost {
+          reportSessionLost()
+          return
         }
       }
 
