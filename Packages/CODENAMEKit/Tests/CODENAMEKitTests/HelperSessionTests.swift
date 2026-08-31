@@ -53,7 +53,7 @@ struct HelperSessionTests {
       session.runFrame { audio in
         audioBytes = audio.count
         audioArrived.signal()
-      })
+      } == .sent)
     #expect(audioArrived.wait(timeout: .now() + 10) == .success)
     #expect(audioBytes > 0)
 
@@ -76,7 +76,7 @@ struct HelperSessionTests {
 
     for _ in 0..<5 {
       let done = DispatchSemaphore(value: 0)
-      #expect(session.runFrame { _ in done.signal() })
+      #expect(session.runFrame { _ in done.signal() } == .sent)
       #expect(done.wait(timeout: .now() + 10) == .success)
     }
 
