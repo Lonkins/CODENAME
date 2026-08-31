@@ -3,6 +3,9 @@ import Testing
 
 @testable import CODENAMEKit
 
+// Each suite file declares its own, as the other core-backed suites do.
+private let testCorePath = ProcessInfo.processInfo.environment["TEST_CORE_PATH"]
+
 /// TestCore declares one option and echoes its resolved value into pixel 2 of
 /// every frame, the same channel it uses for input. That makes "the core
 /// actually read what the frontend holds" observable rather than assumed.
