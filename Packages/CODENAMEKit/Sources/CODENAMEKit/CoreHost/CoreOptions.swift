@@ -45,7 +45,7 @@ public final class CoreOptions {
   private var buffers: [String: UnsafeMutablePointer<CChar>] = [:]
   /// Buffers a core may still hold a pointer to. The interface gives no moment
   /// at which a handed-out string is provably dead, so nothing is freed until
-  /// the session ends; the count is bounded by user option changes.
+  /// the session ends; only a value that actually changes retires one.
   private var retired: [UnsafeMutablePointer<CChar>] = []
 
   private var changedSinceQuery = false
@@ -58,10 +58,12 @@ public final class CoreOptions {
   }
 
   /// Replaces the declared options. Cores may re-declare mid-session; a value
-  /// the user already chose survives as long as it is still offered.
+  /// the user already chose survives as long as it is still offered, and a
+  /// choice that gets dropped counts as a change the core must be told about.
   public func declare(_ options: [CoreOption]) {
     definitions = options
     var kept: [String: String] = [:]
+    var reverted = false
     for option in options {
       if let existing = selected[option.key],
         option.values.contains(where: { $0.value == existing })
@@ -69,11 +71,17 @@ public final class CoreOptions {
         kept[option.key] = existing
       } else {
         kept[option.key] = option.defaultValue
+        if let existing = selected[option.key], existing != option.defaultValue { reverted = true }
       }
     }
+    // Only buffers whose value actually moved are retired: a re-declaration
+    // that changes nothing must not grow the retired list.
+    for (key, buffer) in buffers where kept[key] != selected[key] {
+      retired.append(buffer)
+      buffers.removeValue(forKey: key)
+    }
     selected = kept
-    retired.append(contentsOf: buffers.values)
-    buffers.removeAll()
+    if reverted { changedSinceQuery = true }
   }
 
   public func value(for key: String) -> String? { selected[key] }
