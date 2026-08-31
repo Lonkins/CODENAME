@@ -10,10 +10,11 @@ public enum AppPaths {
   public static var system: URL { base.appendingPathComponent("System", isDirectory: true) }
   public static var saves: URL { base.appendingPathComponent("Saves", isDirectory: true) }
   public static var mappings: URL { base.appendingPathComponent("Mappings", isDirectory: true) }
+  public static var options: URL { base.appendingPathComponent("Options", isDirectory: true) }
 
   /// Creates the standard directories; safe to call repeatedly.
   public static func ensureExists() {
-    for url in [system, saves, mappings] {
+    for url in [system, saves, mappings, options] {
       try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     }
   }
