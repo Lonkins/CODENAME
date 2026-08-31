@@ -40,13 +40,13 @@ import Testing
     #expect(bgra([0x10, 0x20, 0x30, 0x00], .xrgb8888) == [0x10, 0x20, 0x30, 255])
   }
 
-  @Test func honorsPitchPadding() {
+  @Test func honorsPitchPadding() throws {
     // 2x2 RGB565, pitch 8 (4 bytes data + 4 padding per row).
     let bytes: [UInt8] = [
       0x00, 0xF8, 0xE0, 0x07, 0xAA, 0xBB, 0xCC, 0xDD,
       0x1F, 0x00, 0x00, 0xF8, 0xAA, 0xBB, 0xCC, 0xDD,
     ]
-    let out = bgra(bytes, .rgb565, width: 2, height: 2, pitch: 8)
+    let out = try #require(bgra(bytes, .rgb565, width: 2, height: 2, pitch: 8))
     #expect(out.count == 2 * 2 * 4)
     #expect(Array(out[0..<8]) == [0, 0, 255, 255, 0, 255, 0, 255])
     #expect(Array(out[8..<16]) == [255, 0, 0, 255, 0, 0, 255, 255])

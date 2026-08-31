@@ -36,13 +36,15 @@ import Testing
   @Test func videoMasterRunsOneFrameEveryVblank() {
     var clock = FramePacer.FrameClock(
       mode: .videoMaster(vblanksPerFrame: 1), coreFPS: 60, displayRefresh: 60)
-    #expect((0..<4).map { _ in clock.framesDue() } == [1, 1, 1, 1])
+    let due = (0..<4).map { _ in clock.framesDue() }
+    #expect(due == [1, 1, 1, 1])
   }
 
   @Test func videoMasterOnProMotionRunsEverySecondVblank() {
     var clock = FramePacer.FrameClock(
       mode: .videoMaster(vblanksPerFrame: 2), coreFPS: 60, displayRefresh: 120)
-    #expect((0..<4).map { _ in clock.framesDue() } == [0, 1, 0, 1])
+    let due = (0..<4).map { _ in clock.framesDue() }
+    #expect(due == [0, 1, 0, 1])
   }
 
   @Test func audioMasterRunsPALContentAtItsOwnRate() {
@@ -57,7 +59,8 @@ import Testing
 
   @Test func audioMasterRunsCoresFasterThanTheDisplay() {
     var clock = FramePacer.FrameClock(mode: .audioMaster, coreFPS: 75, displayRefresh: 60)
-    let total = (0..<600).reduce(0) { sum, _ in sum + clock.framesDue() }
+    var total = 0
+    for _ in 0..<600 { total += clock.framesDue() }
     #expect(total == 750)
   }
 
@@ -65,7 +68,8 @@ import Testing
     // A core rate far above the display must not let one vblank ask for an
     // unbounded burst of frames after a hitch.
     var clock = FramePacer.FrameClock(mode: .audioMaster, coreFPS: 6000, displayRefresh: 60)
-    #expect((0..<3).allSatisfy { _ in clock.framesDue() <= FramePacer.FrameClock.maxCatchUp })
+    let due = (0..<3).map { _ in clock.framesDue() }
+    #expect(due.allSatisfy { $0 <= FramePacer.FrameClock.maxCatchUp })
   }
 
   @Test func balancedBufferKeepsBaseRatio() {
