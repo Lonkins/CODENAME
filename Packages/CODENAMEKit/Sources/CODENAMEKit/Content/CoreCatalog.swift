@@ -15,6 +15,10 @@ public struct CoreCatalog {
     /// their metadata comes from a static .info sidecar, and sessions run
     /// exclusively in CoreHost.xpc.
     public let requiresHelper: Bool
+    /// Which disc system this core plays, when it plays one. Declared in
+    /// the sidecar rather than matched on the core's name, so routing a
+    /// multi-claimed disc extension is mechanical (ADR 0007).
+    public let system: DiscSniffer.System?
   }
 
   public let entries: [Entry]
@@ -46,7 +50,7 @@ public struct CoreCatalog {
           info.valid_extensions.map { Self.parseExtensions(String(cString: $0)) } ?? []
         return Entry(
           url: url, name: String(cString: namePointer), extensions: extensions,
-          needsFullPath: info.need_fullpath, requiresHelper: false)
+          needsFullPath: info.need_fullpath, requiresHelper: false, system: nil)
       }
       + Self.helperOnlyEntries(
         dylibs: helperOnlyDirectory, sidecars: sidecarDirectory ?? helperOnlyDirectory)
@@ -72,7 +76,8 @@ public struct CoreCatalog {
       }
   }
 
-  /// `key = value` lines: name, pipe-separated extensions, need_fullpath.
+  /// `key = value` lines: name, pipe-separated extensions, need_fullpath,
+  /// system.
   static func parseSidecar(_ text: String, dylibURL: URL) -> Entry? {
     var fields: [String: String] = [:]
     for line in text.split(whereSeparator: \.isNewline) {
@@ -86,7 +91,16 @@ public struct CoreCatalog {
     else { return nil }
     return Entry(
       url: dylibURL, name: name, extensions: parseExtensions(extensionList),
-      needsFullPath: fields["need_fullpath"] == "true", requiresHelper: true)
+      needsFullPath: fields["need_fullpath"] == "true", requiresHelper: true,
+      system: parseSystem(fields["system"]))
+  }
+
+  static func parseSystem(_ name: String?) -> DiscSniffer.System? {
+    switch name {
+    case "playstation": return .playStation
+    case "segacd": return .segaCD
+    default: return nil
+    }
   }
 
   public func core(forExtension ext: String) -> Entry? {
