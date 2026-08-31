@@ -140,4 +140,28 @@ struct HelperSessionTests {
     session.close()
     #expect(Date().timeIntervalSince(started) < 1)
   }
+
+  @Test func aSessionDoesNotOutliveThePeerThatOpenedIt() throws {
+    // The mirror of the client-side fix: the helper hosts one session at a
+    // time, so a peer that dies without closing would strand a loaded core
+    // and its content until the process exits.
+    let abandoned = LoopbackCoreHost()
+    _ = try openSession(abandoned)
+    abandoned.invalidate()
+
+    let host = LoopbackCoreHost()
+    let proxy = try #require(host.proxy(errorHandler: { _ in }))
+    let session = HelperSession(proxy: proxy)
+    session.bind(connection: host.clientConnection)
+    var opened: HelperSession.AVInfo?
+    let temporary = FileManager.default.temporaryDirectory.path
+    for _ in 0..<50 where opened == nil {
+      opened = session.open(
+        corePath: coreURL.path, contentPath: nil,
+        systemDirectory: temporary, saveDirectory: temporary)
+      if opened == nil { Thread.sleep(forTimeInterval: 0.05) }
+    }
+    #expect(opened != nil)
+    session.close()
+  }
 }
