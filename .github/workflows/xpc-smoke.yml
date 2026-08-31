@@ -19,7 +19,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Assemble app
-        run: ./Scripts/make-app.sh
+        # Debug configuration: the smoke hook is compiled out of release.
+        run: CONFIG=debug ./Scripts/make-app.sh
       - name: Handshake with bundled service
         run: |
           CODENAME_XPC_SMOKE=1 ./build/CODENAME.app/Contents/MacOS/CODENAME 2> smoke.log &
@@ -27,4 +28,6 @@ jobs:
           sleep 8
           kill $APP_PID 2>/dev/null || true
           cat smoke.log | grep -v CoreAudio || true
-          grep -q "xpc smoke: helper version 2" smoke.log
+          # The app compares against its own wire version, so this check
+          # does not go stale the next time the wire moves.
+          grep -q "xpc smoke: helper version .*, match" smoke.log
