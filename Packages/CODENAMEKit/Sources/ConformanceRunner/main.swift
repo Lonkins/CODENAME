@@ -100,7 +100,8 @@ func runViaHelper(
   proxy.openSession(
     corePath: coreURL.path, contentPath: content,
     systemDirectory: systemDir,
-    saveDirectory: FileManager.default.temporaryDirectory.path
+    saveDirectory: FileManager.default.temporaryDirectory.path,
+    options: Data()
   ) { ok, _, _, _, _, _, fps, rate in
     av = (ok, fps, rate)
     openSemaphore.signal()

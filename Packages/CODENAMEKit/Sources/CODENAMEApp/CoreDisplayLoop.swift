@@ -146,11 +146,6 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     }
   }
 
-  static func optionsURL(forCore coreURL: URL) -> URL {
-    AppPaths.options
-      .appendingPathComponent(coreURL.deletingPathExtension().lastPathComponent + ".json")
-  }
-
   private func setUpOnCoreThread() {
     AppPaths.ensureExists()
     let environment = EnvironmentHandler(
@@ -159,7 +154,7 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
 
     // Seeded before the session exists: cores declare their options during
     // retro_set_environment, which runs inside CoreSession's initializer.
-    let optionsURL = Self.optionsURL(forCore: coreURL)
+    let optionsURL = AppPaths.optionsFile(forCore: coreURL)
     environment.options.prefer((try? CoreOptionsStore.load(from: optionsURL)) ?? [:])
 
     do {

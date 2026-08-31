@@ -38,13 +38,15 @@ public final class HelperSession: @unchecked Sendable {
   /// Opens the session and sizes the shared surface from MAX geometry
   /// (cores switch video modes mid-session). Nil on failure or timeout.
   public func open(
-    corePath: String, contentPath: String?, systemDirectory: String, saveDirectory: String
+    corePath: String, contentPath: String?, systemDirectory: String, saveDirectory: String,
+    options: [String: String] = [:]
   ) -> AVInfo? {
     let semaphore = DispatchSemaphore(value: 0)
     nonisolated(unsafe) var result: AVInfo?
+    let encoded = (try? JSONEncoder().encode(options)) ?? Data()
     proxy.openSession(
       corePath: corePath, contentPath: contentPath,
-      systemDirectory: systemDirectory, saveDirectory: saveDirectory
+      systemDirectory: systemDirectory, saveDirectory: saveDirectory, options: encoded
     ) { ok, baseW, baseH, maxW, maxH, aspect, fps, rate in
       if ok {
         result = AVInfo(
@@ -128,6 +130,19 @@ public final class HelperSession: @unchecked Sendable {
       self.proxy.restoreSaveRAM(bytes) { done($0) }
     }
     return reply ?? false
+  }
+
+  /// What the hosted core declared and what the helper resolved. Nil when the
+  /// helper has no session or the reply times out.
+  public func optionsSnapshot() -> CoreOptionsSnapshot? {
+    let semaphore = DispatchSemaphore(value: 0)
+    nonisolated(unsafe) var payload = Data()
+    proxy.optionsSnapshot { data in
+      payload = data
+      semaphore.signal()
+    }
+    guard semaphore.wait(timeout: .now() + Self.replyTimeout) == .success else { return nil }
+    return try? JSONDecoder().decode(CoreOptionsSnapshot.self, from: payload)
   }
 
   public func close() {

@@ -13,9 +13,17 @@ import IOSurface
   /// Reply: ok, base width/height, max width/height, aspect ratio, fps,
   /// audio rate. The shared IOSurface must be sized from MAX geometry —
   /// cores switch video modes mid-session (v2).
+  /// v3: `options` is a JSON `[String: String]` of stored option selections,
+  /// seeded before the core declares anything — cores declare during
+  /// retro_set_environment, which runs inside the session initializer.
   func openSession(
     corePath: String, contentPath: String?, systemDirectory: String, saveDirectory: String,
+    options: Data,
     reply: @escaping @Sendable (Bool, Int, Int, Int, Int, Double, Double, Double) -> Void)
+
+  /// v3: what the hosted core declared and what the helper resolved, as a
+  /// JSON `CoreOptionsSnapshot`. Empty when there is no session.
+  func optionsSnapshot(reply: @escaping @Sendable (Data) -> Void)
 
   /// Runs N frames; replies with the latest frame (bytes, width, height,
   /// pitch, pixel-format wire code) and the drained interleaved audio.
@@ -79,7 +87,7 @@ extension LibretroPixelFormat {
 }
 
 public enum CoreHostWire {
-  public static let version = 2
+  public static let version = 3
 
   public static func interface() -> NSXPCInterface {
     let interface = NSXPCInterface(with: CoreHostProtocol.self)
@@ -102,6 +110,8 @@ public enum CoreHostWire {
 public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Sendable {
   private let coreQueue = DispatchQueue(label: "CODENAME.CoreHost.core")
   private var session: CoreSession?
+  /// Held so option state can be reported back; same queue confinement.
+  private var environment: EnvironmentHandler?
 
   public func handshake(version: Int, reply: @escaping @Sendable (Int) -> Void) {
     reply(CoreHostWire.version)
@@ -113,6 +123,7 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
 
   public func openSession(
     corePath: String, contentPath: String?, systemDirectory: String, saveDirectory: String,
+    options: Data,
     reply: @escaping @Sendable (Bool, Int, Int, Int, Int, Double, Double, Double) -> Void
   ) {
     coreQueue.async { [self] in
@@ -121,6 +132,10 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
         systemDirectory: URL(fileURLWithPath: systemDirectory),
         saveDirectory: URL(fileURLWithPath: saveDirectory),
         jitCapable: true)
+      // Seeded before the session exists, for the same reason as in-process.
+      let stored = (try? JSONDecoder().decode([String: String].self, from: options)) ?? [:]
+      environment.options.prefer(stored)
+      self.environment = environment
       let policy = CoreTrustPolicy(allowedDirectory: coreURL.deletingLastPathComponent())
       do {
         let session = try CoreSession(
@@ -154,6 +169,16 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
       reply(
         Data(frame.bytes), frame.width, frame.height, frame.pitch,
         frame.pixelFormat.wireCode, audioData)
+    }
+  }
+
+  public func optionsSnapshot(reply: @escaping @Sendable (Data) -> Void) {
+    coreQueue.async { [self] in
+      guard let environment, session != nil else { return reply(Data()) }
+      let snapshot = CoreOptionsSnapshot(
+        options: environment.options.definitions,
+        selected: environment.options.selectedValues)
+      reply((try? JSONEncoder().encode(snapshot)) ?? Data())
     }
   }
 
