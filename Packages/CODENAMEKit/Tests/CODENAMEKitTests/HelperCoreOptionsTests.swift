@@ -73,8 +73,11 @@ struct HelperCoreOptionsTests {
   private var coreURL: URL { URL(fileURLWithPath: testCorePath ?? "/nonexistent") }
   private var temporary: String { FileManager.default.temporaryDirectory.path }
 
-  private func openedSession(options: [String: String]) throws -> HelperSession {
-    let host = LoopbackCoreHost()
+  /// The host must outlive the session: if it deallocates, the connection goes
+  /// with it and close() can never reach the helper's session.
+  private func openedSession(_ host: LoopbackCoreHost, options: [String: String]) throws
+    -> HelperSession
+  {
     let maybeProxy = host.proxy(errorHandler: { _ in })
     let proxy = try #require(maybeProxy)
     let session = HelperSession(proxy: proxy)
@@ -86,7 +89,8 @@ struct HelperCoreOptionsTests {
   }
 
   @Test func aCoreWithNoStoredSelectionReportsItsDeclaredDefault() throws {
-    let session = try openedSession(options: [:])
+    let host = LoopbackCoreHost()
+    let session = try openedSession(host, options: [:])
     defer { session.close() }
     let maybeSnapshot = session.optionsSnapshot()
     let snapshot = try #require(maybeSnapshot)
@@ -95,7 +99,8 @@ struct HelperCoreOptionsTests {
   }
 
   @Test func aSeededSelectionReachesTheHelperHostedCore() throws {
-    let session = try openedSession(options: ["testcore_echo": "7"])
+    let host = LoopbackCoreHost()
+    let session = try openedSession(host, options: ["testcore_echo": "7"])
     defer { session.close() }
     let maybeSnapshot = session.optionsSnapshot()
     let snapshot = try #require(maybeSnapshot)
@@ -103,7 +108,8 @@ struct HelperCoreOptionsTests {
   }
 
   @Test func aSeededSelectionTheCoreDoesNotOfferFallsBackToItsDefault() throws {
-    let session = try openedSession(options: ["testcore_echo": "999"])
+    let host = LoopbackCoreHost()
+    let session = try openedSession(host, options: ["testcore_echo": "999"])
     defer { session.close() }
     let maybeSnapshot = session.optionsSnapshot()
     let snapshot = try #require(maybeSnapshot)
@@ -111,7 +117,8 @@ struct HelperCoreOptionsTests {
   }
 
   @Test func theDeclaredOptionSurvivesTheBoundaryIntact() throws {
-    let session = try openedSession(options: [:])
+    let host = LoopbackCoreHost()
+    let session = try openedSession(host, options: [:])
     defer { session.close() }
     let maybeSnapshot = session.optionsSnapshot()
     let snapshot = try #require(maybeSnapshot)
