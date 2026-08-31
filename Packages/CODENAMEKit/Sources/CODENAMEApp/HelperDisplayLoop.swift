@@ -95,12 +95,14 @@ final class HelperDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
 
   /// Once only: a helper that died cannot produce frames, so stop pacing
   /// and hand the failure up rather than repeating the last frame forever.
+  /// Deliberately leaves the display link armed: invalidating it here
+  /// removes the loop thread's last run-loop source, the thread exits, and
+  /// the app's teardown then performs a selector on a dead thread. The
+  /// callback returns early instead, and teardown runs as usual.
   private func reportSessionLost() {
     guard !reportedSessionLost else { return }
     reportedSessionLost = true
-    NSLog("helper session lost — stopping the display link")
-    displayLink?.invalidate()
-    displayLink = nil
+    NSLog("helper session lost — no further frames will be requested")
     audioOutput?.stop()
     let handler = onSessionLost
     DispatchQueue.main.async {
@@ -246,7 +248,7 @@ final class HelperDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
   }
 
   func metalDisplayLink(_ link: CAMetalDisplayLink, needsUpdate update: CAMetalDisplayLink.Update) {
-    guard let presenter, let surface = session.surface else { return }
+    guard let presenter, let surface = session.surface, !reportedSessionLost else { return }
 
     vblankCount += 1
     if vblankCount == 1 {
