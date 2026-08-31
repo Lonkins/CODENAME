@@ -89,6 +89,51 @@ private final class OptionsV2Block {
   }
 }
 
+/// A v1 `SET_CORE_OPTIONS` array: definitions terminated by a zeroed struct.
+/// Same shape as v2 without the categorization fields.
+private final class OptionsV1Block {
+  let pointer: UnsafeMutablePointer<retro_core_option_definition>
+  private let count: Int
+  private var strings: [UnsafeMutablePointer<CChar>] = []
+
+  init(_ declarations: [(key: String, desc: String, values: [(String, String?)], default: String?)])
+  {
+    count = declarations.count + 1
+    pointer = .allocate(capacity: count)
+    pointer.initialize(repeating: retro_core_option_definition(), count: count)
+    for (index, declaration) in declarations.enumerated() {
+      pointer[index].key = duplicate(declaration.key)
+      pointer[index].desc = duplicate(declaration.desc)
+      pointer[index].default_value = declaration.default.flatMap { duplicate($0) }
+      let slots = declaration.values.map {
+        (duplicate($0.0), $0.1.flatMap { label in duplicate(label) })
+      }
+      withUnsafeMutablePointer(to: &pointer[index].values) { tuple in
+        tuple.withMemoryRebound(
+          to: retro_core_option_value.self, capacity: Int(RETRO_NUM_CORE_OPTION_VALUES_MAX)
+        ) { array in
+          for (slot, pair) in slots.enumerated() {
+            array[slot].value = pair.0
+            array[slot].label = pair.1
+          }
+        }
+      }
+    }
+  }
+
+  deinit {
+    for string in strings { free(string) }
+    pointer.deinitialize(count: count)
+    pointer.deallocate()
+  }
+
+  private func duplicate(_ string: String) -> UnsafePointer<CChar>? {
+    guard let copy = strdup(string) else { return nil }
+    strings.append(copy)
+    return UnsafePointer(copy)
+  }
+}
+
 @Suite struct CoreOptionsTests {
 
   // MARK: - v0 grammar (SET_VARIABLES)
@@ -195,6 +240,45 @@ private final class OptionsV2Block {
     #expect(
       CoreOptions.definitions(fromV2: block.pointer).first?.values.first?.displayLabel
         == "raw")
+  }
+
+  // MARK: - v1 definitions (SET_CORE_OPTIONS)
+
+  @Test func v1DefinitionsCarryLabelsAndDeclaredDefault() {
+    let block = OptionsV1Block([
+      (
+        key: "core_speed", desc: "Speed",
+        values: [("normal", "Normal"), ("turbo", "Turbo")], default: "turbo"
+      )
+    ])
+    let options = CoreOptions.definitions(fromV1: block.pointer)
+    #expect(options.count == 1)
+    #expect(options.first?.key == "core_speed")
+    #expect(options.first?.title == "Speed")
+    #expect(options.first?.values.map(\.label) == ["Normal", "Turbo"])
+    #expect(options.first?.defaultValue == "turbo")
+  }
+
+  @Test func v1MissingDefaultFallsBackToTheFirstValue() {
+    let block = OptionsV1Block([
+      (key: "k", desc: "K", values: [("a", nil), ("b", nil)], default: nil)
+    ])
+    #expect(CoreOptions.definitions(fromV1: block.pointer).first?.defaultValue == "a")
+  }
+
+  @Test func v1DefaultOutsideTheValueListIgnoresTheOption() {
+    let block = OptionsV1Block([
+      (key: "k", desc: "K", values: [("a", nil)], default: "zzz")
+    ])
+    #expect(CoreOptions.definitions(fromV1: block.pointer).isEmpty)
+  }
+
+  @Test func v1StopsAtTheZeroedDefinition() {
+    let block = OptionsV1Block([
+      (key: "one", desc: "One", values: [("a", nil)], default: "a"),
+      (key: "two", desc: "Two", values: [("b", nil)], default: "b"),
+    ])
+    #expect(CoreOptions.definitions(fromV1: block.pointer).map(\.key) == ["one", "two"])
   }
 
   // MARK: - Selection
@@ -382,6 +466,34 @@ private final class OptionsV2Block {
     handler.options.setValue("true", for: "foo_speedhack")
     #expect(queryUpdate())
     #expect(!queryUpdate())
+  }
+
+  @Test func setCoreOptionsRegistersOptionsAndReportsAvailable() {
+    // A core told the options version is 2 may still speak version 1: the
+    // shim that generation of cores vendored calls this and never falls back.
+    let handler = makeHandler()
+    let block = OptionsV1Block([
+      (key: "core_speed", desc: "Speed", values: [("normal", nil), ("turbo", nil)], default: nil)
+    ])
+    let handled = handler.handle(
+      command: UInt32(RETRO_ENVIRONMENT_SET_CORE_OPTIONS), data: block.pointer)
+    #expect(handled)
+    #expect(handler.options.definitions.map(\.key) == ["core_speed"])
+    #expect(handler.options.value(for: "core_speed") == "normal")
+  }
+
+  @Test func setCoreOptionsIntlRegistersTheEnglishDefinitions() {
+    let handler = makeHandler()
+    let block = OptionsV1Block([
+      (key: "core_speed", desc: "Speed", values: [("normal", nil)], default: nil)
+    ])
+    var intl = retro_core_options_intl()
+    intl.us = block.pointer
+    let handled = withUnsafeMutablePointer(to: &intl) {
+      handler.handle(command: UInt32(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL), data: $0)
+    }
+    #expect(handled)
+    #expect(handler.options.definitions.map(\.key) == ["core_speed"])
   }
 
   @Test func setCoreOptionsV2RegistersOptionsAndReportsNoCategorySupport() {
