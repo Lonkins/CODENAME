@@ -5,8 +5,9 @@
 # behavioral gate for the curated cores (docs/RELEASING.md).
 #
 # Content is user-supplied and local-only: each row names an env var that
-# points at the content file; unset rows skip cleanly so the script runs
-# anywhere without shipping or naming content.
+# points at the content file. Unset rows skip — and a skip is a gate that
+# verified nothing, so the run fails unless CONFORMANCE_ALLOW_SKIP=1 says
+# the caller knows (CI without content, a spot check of one system).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -39,9 +40,10 @@ while read -r system dylib env_name frames hash; do
   for mode in in-process helper; do
     flag=""
     [ "$mode" = helper ] && flag="--helper"
-    if ! "$RUNNER" --core "$CORE_DIR/$dylib" --content "$content" \
-      --frames "$frames" --expected-hash "$hash" $flag >/dev/null 2>&1; then
+    if ! output=$("$RUNNER" --core "$CORE_DIR/$dylib" --content "$content" \
+      --frames "$frames" --expected-hash "$hash" $flag 2>&1); then
       echo "FAIL $system ($mode)"
+      echo "$output" | sed 's/^/    /'
       ok=0
     fi
   done
@@ -54,4 +56,13 @@ while read -r system dylib env_name frames hash; do
 done <Scripts/conformance-hashes.txt
 
 echo "conformance: $pass passed, $skip skipped, $fail failed"
-[ "$fail" = 0 ]
+[ "$fail" = 0 ] || exit 1
+if [ "$skip" != 0 ] && [ "${CONFORMANCE_ALLOW_SKIP:-0}" != 1 ]; then
+  echo "error: $skip system(s) skipped — this run verified nothing about them." >&2
+  echo "  set the content env vars, or pass CONFORMANCE_ALLOW_SKIP=1 deliberately." >&2
+  exit 1
+fi
+if [ "$pass" = 0 ] && [ "$skip" = 0 ]; then
+  echo "error: no rows ran at all" >&2
+  exit 1
+fi
