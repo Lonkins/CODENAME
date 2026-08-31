@@ -21,18 +21,48 @@ public final class HelperSession: @unchecked Sendable {
     public let audioSampleRate: Double
   }
 
+  /// What a frame request did. `.busy` repeats the last frame; `.sessionLost`
+  /// means the helper is gone and the loop must stop rather than spin.
+  public enum FrameOutcome: Equatable, Sendable {
+    case sent
+    case busy
+    case sessionLost
+  }
+
   private static let replyTimeout: TimeInterval = 10
 
   public let inputState = InputState()
   public private(set) var surface: IOSurface?
   public private(set) var avInfo: AVInfo?
 
+  /// Called once, off the main thread, when the helper goes away.
+  public var onSessionLost: (@Sendable () -> Void)?
+
   private let proxy: CoreHostProtocol
   private let inFlight = Atomic<Bool>(false)
+  private let alive = Atomic<Bool>(true)
   private let packedFrameSize = Atomic<UInt64>(0)
 
   public init(proxy: CoreHostProtocol) {
     self.proxy = proxy
+  }
+
+  public var isAlive: Bool { alive.load(ordering: .acquiring) }
+
+  /// Wires the connection's death to this session. Both handlers mean the
+  /// same thing to us: no reply for the in-flight batch will ever arrive.
+  public func bind(connection: NSXPCConnection) {
+    connection.invalidationHandler = { [weak self] in self?.connectionLost() }
+    connection.interruptionHandler = { [weak self] in self?.connectionLost() }
+  }
+
+  /// The reply block that would have released the in-flight guard is never
+  /// going to run, so release it here — otherwise every later frame is
+  /// refused as "busy" and the window freezes with no error.
+  public func connectionLost() {
+    guard alive.exchange(false, ordering: .acquiringAndReleasing) else { return }
+    inFlight.store(false, ordering: .releasing)
+    onSessionLost?()
   }
 
   /// Opens the session and sizes the shared surface from MAX geometry
@@ -41,6 +71,7 @@ public final class HelperSession: @unchecked Sendable {
     corePath: String, contentPath: String?, systemDirectory: String, saveDirectory: String,
     options: [String: String] = [:]
   ) -> AVInfo? {
+    guard isAlive else { return nil }
     let semaphore = DispatchSemaphore(value: 0)
     nonisolated(unsafe) var result: AVInfo?
     let encoded = (try? JSONEncoder().encode(options)) ?? Data()
@@ -79,8 +110,9 @@ public final class HelperSession: @unchecked Sendable {
   /// Sends one frame batch with the current input mask. Returns false when a
   /// batch is already in flight — the caller re-presents the last frame.
   /// `onAudio` runs on the connection's reply queue with the drained samples.
-  public func runFrame(onAudio: @escaping @Sendable (Data) -> Void) -> Bool {
-    guard !inFlight.exchange(true, ordering: .acquiring) else { return false }
+  public func runFrame(onAudio: @escaping @Sendable (Data) -> Void) -> FrameOutcome {
+    guard isAlive else { return .sessionLost }
+    guard !inFlight.exchange(true, ordering: .acquiring) else { return .busy }
     proxy.runFramesShared(1, buttons: inputState.raw) { [self] ok, width, height, audio in
       if ok {
         packedFrameSize.store(Self.pack(width, height), ordering: .relaxed)
@@ -92,7 +124,7 @@ public final class HelperSession: @unchecked Sendable {
         onAudio(audio)
       }
     }
-    return true
+    return .sent
   }
 
   /// Geometry of the newest frame the helper wrote into the surface.
@@ -135,6 +167,7 @@ public final class HelperSession: @unchecked Sendable {
   /// What the hosted core declared and what the helper resolved. Nil when the
   /// helper has no session or the reply times out.
   public func optionsSnapshot() -> CoreOptionsSnapshot? {
+    guard isAlive else { return nil }
     let semaphore = DispatchSemaphore(value: 0)
     nonisolated(unsafe) var payload = Data()
     proxy.optionsSnapshot { data in
@@ -146,9 +179,11 @@ public final class HelperSession: @unchecked Sendable {
   }
 
   public func close() {
-    var reply: Bool?
-    waitReply(timeoutNil: &reply) { done in
-      self.proxy.closeSession { done(true) }
+    if isAlive {
+      var reply: Bool?
+      waitReply(timeoutNil: &reply) { done in
+        self.proxy.closeSession { done(true) }
+      }
     }
     surface = nil
     avInfo = nil
@@ -159,6 +194,7 @@ public final class HelperSession: @unchecked Sendable {
   private func waitReply<T>(
     timeoutNil slot: inout T?, _ body: (@escaping @Sendable (T?) -> Void) -> Void
   ) {
+    guard isAlive else { return }
     let semaphore = DispatchSemaphore(value: 0)
     nonisolated(unsafe) var captured: T?
     body { value in

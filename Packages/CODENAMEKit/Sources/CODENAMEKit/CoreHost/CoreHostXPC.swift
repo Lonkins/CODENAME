@@ -303,6 +303,15 @@ public final class LoopbackCoreHost: NSObject, NSXPCListenerDelegate, @unchecked
     connection.resume()
   }
 
+  /// The client-side connection, so callers wire session lifecycle to it
+  /// exactly as the app does.
+  public var clientConnection: NSXPCConnection { connection }
+
+  /// Simulates the helper going away.
+  public func invalidate() {
+    connection.invalidate()
+  }
+
   deinit {
     connection.invalidate()
     listener.invalidate()

@@ -304,16 +304,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     #else
       let forceHelper = false
     #endif
-    let maybeLoop: (any EmulationLoop)? =
-      (route.host == .helper || forceHelper)
-      ? HelperDisplayLoop(
+    // A route that says helper NEVER falls back to in-process: the fallback
+    // is refusing to run at all.
+    let maybeLoop: (any EmulationLoop)?
+    if route.host == .helper || forceHelper {
+      let helper = HelperDisplayLoop(
         layer: gameView.metalLayer, coreURL: coreURL,
         contentPath: contentPath, displayRefresh: refresh,
         displaySettings: LiveDisplaySettings(resolved))
-      : CoreDisplayLoop(
+      helper?.onSessionLost = { [weak self] message in
+        MainActor.assumeIsolated {
+          guard let self, self.displayLoop != nil else { return }
+          self.stopGame()
+          self.alert(message)
+        }
+      }
+      maybeLoop = helper
+    } else {
+      maybeLoop = CoreDisplayLoop(
         layer: gameView.metalLayer, coreURL: coreURL,
         contentPath: contentPath, displayRefresh: refresh,
         displaySettings: LiveDisplaySettings(resolved))
+    }
     guard let loop = maybeLoop else {
       window.close()
       alert("This build can’t run cores in the isolation helper.")
