@@ -150,7 +150,8 @@ struct HelperSessionTests {
     abandoned.invalidate()
 
     let host = LoopbackCoreHost()
-    let proxy = try #require(host.proxy(errorHandler: { _ in }))
+    let maybeProxy = host.proxy(errorHandler: { _ in })
+    let proxy = try #require(maybeProxy)
     let session = HelperSession(proxy: proxy)
     session.bind(connection: host.clientConnection)
     var opened: HelperSession.AVInfo?
