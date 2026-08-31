@@ -114,7 +114,7 @@ public final class CoreOptions {
   }
 }
 
-// MARK: - Parsing the two declaration interfaces
+// MARK: - Parsing the three declaration interfaces
 
 extension CoreOptions {
   /// `SET_VARIABLES`: an array of `{ key, "Title; a|b|c" }` terminated by a
@@ -144,6 +144,28 @@ extension CoreOptions {
     return CoreOption(key: key, title: title, values: values, defaultValue: first.value)
   }
 
+  /// `SET_CORE_OPTIONS` (v1): definitions terminated by a zeroed struct. The
+  /// same shape as v2 without the categorization fields, and still reachable —
+  /// a core told the version is 2 may speak either.
+  static func definitions(
+    fromV1 data: UnsafePointer<retro_core_option_definition>
+  ) -> [CoreOption] {
+    var result: [CoreOption] = []
+    var index = 0
+    while data[index].key != nil {
+      let definition = data[index]
+      let values = withUnsafePointer(to: definition.values) { readValues($0) }
+      if let option = option(
+        key: definition.key, desc: definition.desc, values: values,
+        declaredDefault: definition.default_value)
+      {
+        result.append(option)
+      }
+      index += 1
+    }
+    return result
+  }
+
   /// `SET_CORE_OPTIONS_V2`: definitions terminated by a zeroed struct, each
   /// carrying its values in a fixed-size array terminated the same way.
   static func definitions(fromV2 data: UnsafePointer<retro_core_options_v2>) -> [CoreOption] {
@@ -151,40 +173,52 @@ extension CoreOptions {
     var result: [CoreOption] = []
     var index = 0
     while definitions[index].key != nil {
-      if let option = option(fromV2: definitions[index]) { result.append(option) }
+      let definition = definitions[index]
+      let values = withUnsafePointer(to: definition.values) { readValues($0) }
+      if let option = option(
+        key: definition.key, desc: definition.desc, values: values,
+        declaredDefault: definition.default_value)
+      {
+        result.append(option)
+      }
       index += 1
     }
     return result
   }
 
-  private static func option(fromV2 definition: retro_core_option_v2_definition) -> CoreOption? {
-    guard let key = definition.key, let desc = definition.desc else { return nil }
-    let values = withUnsafePointer(to: definition.values) { tuple in
-      tuple.withMemoryRebound(
-        to: retro_core_option_value.self, capacity: Int(RETRO_NUM_CORE_OPTION_VALUES_MAX)
-      ) { array -> [CoreOptionValue] in
-        var values: [CoreOptionValue] = []
-        var index = 0
-        while index < Int(RETRO_NUM_CORE_OPTION_VALUES_MAX), let value = array[index].value {
-          values.append(
-            CoreOptionValue(
-              value: String(cString: value),
-              label: array[index].label.map { String(cString: $0) }))
-          index += 1
-        }
-        return values
+  /// Reads a `retro_core_option_value` array out of the fixed-size C array
+  /// both option interfaces embed, stopping at the terminating NULL value.
+  private static func readValues<Tuple>(_ tuple: UnsafePointer<Tuple>) -> [CoreOptionValue] {
+    tuple.withMemoryRebound(
+      to: retro_core_option_value.self, capacity: Int(RETRO_NUM_CORE_OPTION_VALUES_MAX)
+    ) { array in
+      var values: [CoreOptionValue] = []
+      var index = 0
+      while index < Int(RETRO_NUM_CORE_OPTION_VALUES_MAX), let value = array[index].value {
+        values.append(
+          CoreOptionValue(
+            value: String(cString: value),
+            label: array[index].label.map { String(cString: $0) }))
+        index += 1
       }
+      return values
     }
-    guard let first = values.first else { return nil }
+  }
+
+  private static func option(
+    key: UnsafePointer<CChar>?, desc: UnsafePointer<CChar>?, values: [CoreOptionValue],
+    declaredDefault: UnsafePointer<CChar>?
+  ) -> CoreOption? {
+    guard let key, let desc, let first = values.first else { return nil }
 
     // A declared default outside the value list means the option is ignored;
     // no default at all falls back to the first value.
-    guard let declared = definition.default_value else {
+    guard let declaredDefault else {
       return CoreOption(
         key: String(cString: key), title: String(cString: desc), values: values,
         defaultValue: first.value)
     }
-    let defaultValue = String(cString: declared)
+    let defaultValue = String(cString: declaredDefault)
     guard values.contains(where: { $0.value == defaultValue }) else { return nil }
     return CoreOption(
       key: String(cString: key), title: String(cString: desc), values: values,

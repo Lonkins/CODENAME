@@ -74,6 +74,29 @@ public final class EnvironmentHandler {
         CoreOptions.definitions(fromVariables: data.assumingMemoryBound(to: retro_variable.self)))
       return true
 
+    case RETRO_ENVIRONMENT_SET_CORE_OPTIONS:
+      // Version 1. A core told the options version is 2 may still speak this
+      // one — the shim that generation of cores vendored calls it and never
+      // falls back — so refusing here would leave them with no options at all.
+      guard let data else {
+        options.declare([])
+        return true
+      }
+      options.declare(
+        CoreOptions.definitions(
+          fromV1: data.assumingMemoryBound(to: retro_core_option_definition.self)))
+      return true
+
+    case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL:
+      guard let data,
+        let english = data.assumingMemoryBound(to: retro_core_options_intl.self).pointee.us
+      else {
+        options.declare([])
+        return true
+      }
+      options.declare(CoreOptions.definitions(fromV1: english))
+      return true
+
     case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2:
       // The return value advertises *category* support, not success: the
       // options register either way, and this frontend has no category UI.
