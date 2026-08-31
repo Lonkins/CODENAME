@@ -6,7 +6,7 @@ import Testing
   private func bgra(
     _ bytes: [UInt8], _ format: LibretroPixelFormat,
     width: Int = 1, height: Int = 1, pitch: Int? = nil
-  ) -> [UInt8] {
+  ) -> [UInt8]? {
     PixelConverter.toBGRA8(
       bytes: bytes, width: width, height: height,
       pitch: pitch ?? width * format.bytesPerPixel, format: format)
@@ -50,5 +50,31 @@ import Testing
     #expect(out.count == 2 * 2 * 4)
     #expect(Array(out[0..<8]) == [0, 0, 255, 255, 0, 255, 0, 255])
     #expect(Array(out[8..<16]) == [255, 0, 0, 255, 0, 0, 255, 255])
+  }
+
+  // MARK: - Geometry a core reported and this process has to trust
+
+  @Test func refusesGeometryWiderThanItsOwnPitch() {
+    // The only place core-reported (width, height, pitch) becomes raw
+    // pointer arithmetic in the app process: a width that overruns the
+    // pitch must not read past the buffer.
+    #expect(
+      PixelConverter.toBGRA8(
+        bytes: [UInt8](repeating: 0, count: 8), width: 4, height: 1, pitch: 4, format: .rgb565)
+        == nil)
+  }
+
+  @Test func refusesBufferShorterThanPitchTimesHeight() {
+    #expect(
+      PixelConverter.toBGRA8(
+        bytes: [UInt8](repeating: 0, count: 8), width: 2, height: 4, pitch: 4, format: .rgb565)
+        == nil)
+  }
+
+  @Test func refusesZeroDimensions() {
+    #expect(
+      PixelConverter.toBGRA8(bytes: [], width: 0, height: 1, pitch: 0, format: .rgb565) == nil)
+    #expect(
+      PixelConverter.toBGRA8(bytes: [], width: 1, height: 0, pitch: 2, format: .rgb565) == nil)
   }
 }
