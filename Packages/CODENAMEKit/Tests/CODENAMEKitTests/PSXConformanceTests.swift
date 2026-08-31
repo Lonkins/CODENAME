@@ -46,7 +46,7 @@ struct PSXConformanceTests {
     // 300 frames of BIOS boot — enough to reach the logo scene.
     for _ in 0..<300 {
       let done = DispatchSemaphore(value: 0)
-      guard session.runFrame(onAudio: { _ in done.signal() }) else { continue }
+      guard session.runFrame(onAudio: { _ in done.signal() }) == .sent else { continue }
       #expect(done.wait(timeout: .now() + 30) == .success)
     }
     let size = session.latestFrameSize
