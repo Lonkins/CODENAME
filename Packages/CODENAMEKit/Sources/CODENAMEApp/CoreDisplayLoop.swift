@@ -16,7 +16,8 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
   private var presenter: MetalPresenter?
   private var audioRing: SPSCRingBuffer?
   private var audioOutput: CoreAudioOutput?
-  private var vblanksPerFrame = 1
+  private var frameClock = FramePacer.FrameClock(
+    mode: .videoMaster(vblanksPerFrame: 1), coreFPS: 60, displayRefresh: 60)
   private var vblankCount = 0
   private var paceFrameCount = 0
   private var paceWindowStart = 0.0
@@ -208,12 +209,12 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
 
     if let fps = session?.avInfo?.framesPerSecond {
       let mode = FramePacer.mode(coreFPS: fps, displayRefresh: displayRefresh)
-      if case .videoMaster(let vblanks) = mode {
-        vblanksPerFrame = vblanks
-      }
+      frameClock = FramePacer.FrameClock(
+        mode: mode, coreFPS: fps, displayRefresh: displayRefresh)
       NSLog(
-        "pacing: core %.4ffps, display %.0fHz, %d vblank(s)/frame",
-        fps, displayRefresh, vblanksPerFrame)
+        "pacing: core %.4ffps, display %.0fHz, %.4f frame(s)/vblank, %@",
+        fps, displayRefresh, frameClock.framesPerVblank,
+        mode == .audioMaster ? "audio-master" : "video-master")
     }
 
     let displayLink = CAMetalDisplayLink(metalLayer: layer)
@@ -232,8 +233,9 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     if vblankCount == 1 {
       NSLog("display link first callback")
     }
-    if vblankCount % vblanksPerFrame == 0 {
-      session.run(frames: 1)
+    let framesDue = frameClock.framesDue()
+    if framesDue > 0 {
+      session.run(frames: framesDue)
       let samples = session.drainAudioSamples()
       if let audioRing, let audioOutput {
         _ = audioRing.write(samples)  // overruns drop the newest; rate control prevents them
@@ -246,7 +248,7 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
         flushSaveRAM()
       }
 
-      paceFrameCount += 1
+      paceFrameCount += framesDue
       let now = CACurrentMediaTime()
       if paceWindowStart == 0 { paceWindowStart = now }
       if now - paceWindowStart >= 5 {
@@ -257,7 +259,9 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
       }
     }
 
-    guard let frame = session.latestFrame, let aspect = session.avInfo?.aspectRatio else { return }
+    guard let frame = session.latestFrame, let aspect = session.avInfo?.aspectRatio,
+      frame.width > 0, frame.height > 0
+    else { return }
     let texture = update.drawable.texture
     let integerOnly = displaySettings.integerScale
     let destination = IntegerScaler.destinationRect(

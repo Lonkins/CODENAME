@@ -1,8 +1,15 @@
 /// Converts core framebuffers to tightly packed BGRA8 (Metal `.bgra8Unorm`).
 public enum PixelConverter {
+  /// `nil` when the reported geometry does not fit the buffer it describes.
+  /// Cores report width, height and pitch themselves, and this is the one
+  /// place those numbers become raw pointer arithmetic in the app process
+  /// — where `UnsafeBufferPointer` subscripts are unchecked in release.
   public static func toBGRA8(
     bytes: [UInt8], width: Int, height: Int, pitch: Int, format: LibretroPixelFormat
-  ) -> [UInt8] {
+  ) -> [UInt8]? {
+    guard width > 0, height > 0, pitch >= width * format.bytesPerPixel,
+      bytes.count >= pitch * height
+    else { return nil }
     var out = [UInt8](repeating: 0, count: width * height * 4)
 
     bytes.withUnsafeBufferPointer { source in

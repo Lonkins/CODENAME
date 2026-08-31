@@ -259,9 +259,13 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
         return reply(false, 0, 0, audioData)
       }
 
-      let bgra = PixelConverter.toBGRA8(
-        bytes: frame.bytes, width: frame.width, height: frame.height,
-        pitch: frame.pitch, format: frame.pixelFormat)
+      guard
+        let bgra = PixelConverter.toBGRA8(
+          bytes: frame.bytes, width: frame.width, height: frame.height,
+          pitch: frame.pitch, format: frame.pixelFormat)
+      else {
+        return reply(false, 0, 0, audioData)
+      }
       IOSurfaceLock(frameSurface, [], nil)
       let base = IOSurfaceGetBaseAddress(frameSurface)
       let surfaceRowBytes = IOSurfaceGetBytesPerRow(frameSurface)

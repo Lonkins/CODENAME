@@ -25,6 +25,36 @@ public enum FramePacer {
     return best.error <= maxMismatch ? .videoMaster(vblanksPerFrame: best.vblanks) : .audioMaster
   }
 
+  /// The per-vblank decision both display loops run on. Video-master runs
+  /// one frame every N vblanks; the audio-master fallback runs the core at
+  /// its own rate against the display's clock, which is what keeps 50Hz
+  /// content at 50Hz on a 60Hz panel instead of 20% fast.
+  public struct FrameClock: Equatable, Sendable {
+    /// A hitch must not turn into an unbounded burst of core frames.
+    public static let maxCatchUp = 4
+
+    public let framesPerVblank: Double
+    private var credit = 0.0
+
+    public init(mode: Mode, coreFPS: Double, displayRefresh: Double) {
+      switch mode {
+      case .videoMaster(let vblanksPerFrame):
+        framesPerVblank = 1 / Double(max(vblanksPerFrame, 1))
+      case .audioMaster:
+        framesPerVblank = displayRefresh > 0 ? coreFPS / displayRefresh : 1
+      }
+    }
+
+    /// How many core frames this vblank owes. Fractional rates accumulate,
+    /// so the long-run average is the core's own rate.
+    public mutating func framesDue() -> Int {
+      credit += framesPerVblank
+      let due = min(Int(credit.rounded(.down)), Self.maxCatchUp)
+      credit -= Double(due)
+      return due
+    }
+  }
+
   /// Dynamic rate control: nudge the resample ratio linearly with ring
   /// occupancy, clamped to ±maxDeviation. Occupancy 0.5 is the setpoint.
   public static func resampleRatio(

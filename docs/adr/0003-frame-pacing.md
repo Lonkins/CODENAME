@@ -42,3 +42,24 @@ Single-frame pipeline: `retro_run` writes the framebuffer, the same vblank's ren
 - The session layer owns a pacing state machine (video-master / audio-master fallback / fast-forward); it is pure logic and gets unit tests (given core fps + refresh sequences, assert run-cadence and ratio adjustments).
 - A pacing harness (Phase 1 conformance tests) counts repeated/dropped frames and asserts bounded ring occupancy over simulated minutes.
 - VRR/adaptive-sync displays are not specially handled in Phase 1; the mismatch guard covers them conservatively. Revisit if ProMotion VRR proves better served by driving the display link at core rate.
+
+## Amendment (2026-08-31): the fallback, as built
+
+The mismatch guard above was decided and then not implemented: both display
+loops matched only on video-master, so `.audioMaster` left one core frame per
+vblank in place and ran 50 Hz content at 60 — the exact failure the guard
+existed to prevent, with dynamic rate control clamped far too tightly to
+absorb it.
+
+It ships now, and not as option 1's separate core-rate timer. Both modes are
+expressed as one per-vblank quantity — frames due per vblank, accumulated
+across vblanks — so video-master is `1/N` and the fallback is
+`coreFPS / refresh`. Fractional rates come out exact in the long run (5 core
+frames per 6 vblanks for PAL on 60 Hz), the core keeps running on its own
+thread driven by the display link, and neither loop grows a second code path.
+Catch-up is capped so a hitch cannot turn one vblank into an unbounded burst.
+
+What this does not do: it does not remove the judder inherent to 50 on 60 —
+frames still beat against vblank, which is why video-master is preferred
+whenever a divisor fits. It buys correct rate and correct audio, which is
+what the guard was for.

@@ -50,9 +50,14 @@ func hash(_ frame: CoreSession.VideoFrame) -> String {
 // Framebuffer → PNG, straight from core memory: works headless, no window
 // server involved.
 func writePNG(_ frame: CoreSession.VideoFrame, to path: String) {
-  let bgra = PixelConverter.toBGRA8(
-    bytes: frame.bytes, width: frame.width, height: frame.height,
-    pitch: frame.pitch, format: frame.pixelFormat)
+  guard
+    let bgra = PixelConverter.toBGRA8(
+      bytes: frame.bytes, width: frame.width, height: frame.height,
+      pitch: frame.pitch, format: frame.pixelFormat)
+  else {
+    print("frame geometry is not renderable: \(frame.width)x\(frame.height) pitch \(frame.pitch)")
+    return
+  }
   let bitmapInfo = CGBitmapInfo(
     rawValue: CGImageAlphaInfo.noneSkipFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
   guard let provider = CGDataProvider(data: Data(bgra) as CFData),

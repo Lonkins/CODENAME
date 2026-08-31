@@ -181,6 +181,10 @@ public final class CoreSession {
   private func captureVideo(data: UnsafeRawPointer?, width: UInt32, height: UInt32, pitch: Int) {
     // nil data = "duplicate frame" (we advertise GET_CAN_DUPE); keep the last one.
     guard let data else { return }
+    // Everything downstream trusts these numbers; a core that reports
+    // geometry its own buffer cannot hold gets its frame dropped here.
+    let format = environment.pixelFormat ?? .zeroRGB1555
+    guard width > 0, height > 0, pitch >= Int(width) * format.bytesPerPixel else { return }
     latestFrame = VideoFrame(
       width: Int(width),
       height: Int(height),
