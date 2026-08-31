@@ -29,7 +29,8 @@ struct CoreOptionEchoTests {
 
   /// RGB565: pixel 2 occupies bytes 4 and 5, little-endian.
   private func echo(_ session: CoreSession) throws -> UInt16 {
-    let frame = try #require(session.latestFrame)
+    let maybeFrame = session.latestFrame
+    let frame = try #require(maybeFrame)
     return UInt16(frame.bytes[4]) | (UInt16(frame.bytes[5]) << 8)
   }
 
@@ -74,19 +75,21 @@ struct HelperCoreOptionsTests {
 
   private func openedSession(options: [String: String]) throws -> HelperSession {
     let host = LoopbackCoreHost()
-    let proxy = try #require(host.proxy(errorHandler: { _ in }))
+    let maybeProxy = host.proxy(errorHandler: { _ in })
+    let proxy = try #require(maybeProxy)
     let session = HelperSession(proxy: proxy)
     let opened = session.open(
       corePath: coreURL.path, contentPath: nil, systemDirectory: temporary,
       saveDirectory: temporary, options: options)
-    _ = try #require(opened)
+    #expect(opened != nil)
     return session
   }
 
   @Test func aCoreWithNoStoredSelectionReportsItsDeclaredDefault() throws {
     let session = try openedSession(options: [:])
     defer { session.close() }
-    let snapshot = try #require(session.optionsSnapshot())
+    let maybeSnapshot = session.optionsSnapshot()
+    let snapshot = try #require(maybeSnapshot)
     #expect(snapshot.options.map(\.key) == ["testcore_echo"])
     #expect(snapshot.selected["testcore_echo"] == "0")
   }
@@ -94,22 +97,26 @@ struct HelperCoreOptionsTests {
   @Test func aSeededSelectionReachesTheHelperHostedCore() throws {
     let session = try openedSession(options: ["testcore_echo": "7"])
     defer { session.close() }
-    let snapshot = try #require(session.optionsSnapshot())
+    let maybeSnapshot = session.optionsSnapshot()
+    let snapshot = try #require(maybeSnapshot)
     #expect(snapshot.selected["testcore_echo"] == "7")
   }
 
   @Test func aSeededSelectionTheCoreDoesNotOfferFallsBackToItsDefault() throws {
     let session = try openedSession(options: ["testcore_echo": "999"])
     defer { session.close() }
-    let snapshot = try #require(session.optionsSnapshot())
+    let maybeSnapshot = session.optionsSnapshot()
+    let snapshot = try #require(maybeSnapshot)
     #expect(snapshot.selected["testcore_echo"] == "0")
   }
 
   @Test func theDeclaredOptionSurvivesTheBoundaryIntact() throws {
     let session = try openedSession(options: [:])
     defer { session.close() }
-    let snapshot = try #require(session.optionsSnapshot())
-    let option = try #require(snapshot.options.first)
+    let maybeSnapshot = session.optionsSnapshot()
+    let snapshot = try #require(maybeSnapshot)
+    let maybeOption = snapshot.options.first
+    let option = try #require(maybeOption)
     #expect(option.title == "Echo value")
     #expect(option.values.map(\.value) == ["0", "7", "9"])
   }
