@@ -63,6 +63,7 @@ cat > "$HELPER_ONLY_OUT/mednafen_psx_libretro.info" <<'INFO'
 name = Beetle PSX
 extensions = exe|cue|toc|ccd|m3u|pbp|chd
 need_fullpath = true
+system = playstation
 INFO
 
 for dylib in "$OUT"/*.dylib "$HELPER_ONLY_OUT"/*.dylib; do

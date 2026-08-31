@@ -19,7 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
   private let libraryModel = LibraryModel()
   private let recentsMenu = NSMenu(title: "Open Recent")
   private lazy var catalog = CoreCatalog(
-    pluginsDirectory: Bundle.main.builtInPlugInsURL ?? URL(fileURLWithPath: "/nonexistent"),
+    pluginsDirectory: ContentRouter.bundledPlugInsDirectory,
     helperOnlyDirectory: Bundle.main.builtInPlugInsURL?
       .appendingPathComponent("HelperOnly", isDirectory: true),
     sidecarDirectory: Bundle.main.resourceURL?
@@ -44,14 +44,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     // Development/conformance auto-start path (ADR 0005 §5.7).
     if let core = ProcessInfo.processInfo.environment["CODENAME_CORE"] {
       startGame(
-        coreURL: URL(fileURLWithPath: core),
+        route: ContentRouter.route(
+          forCore: URL(fileURLWithPath: core),
+          plugInsDirectory: ContentRouter.bundledPlugInsDirectory),
         contentPath: ProcessInfo.processInfo.environment["CODENAME_CONTENT"])
     } else if let content = ProcessInfo.processInfo.environment["CODENAME_OPEN_CONTENT"] {
       // Dev-only: drive the full catalog-routed open path headlessly —
       // BIOS gate, helper routing and all.
       openContent(at: URL(fileURLWithPath: content))
     } else if let bundled = bundledTestCoreURL() {
-      startGame(coreURL: bundled, contentPath: nil)
+      startGame(
+        route: ContentRouter.route(
+          forCore: bundled, plugInsDirectory: ContentRouter.bundledPlugInsDirectory),
+        contentPath: nil)
     }
 
     // Dev-only: launchd-hosted XPC service smoke (ADR 0006 step B).
@@ -116,32 +121,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
   }
 
-  // Boundary hygiene (ADR 0001 amendment): cartridge content has hard size
-  // maxima; refuse absurd files before handing bytes to a core.
-  private static let maxContentBytes = 64 * 1024 * 1024
-
   private func openContent(at url: URL) {
-    guard let entry = routedCore(for: url) else {
-      let alert = NSAlert()
-      alert.messageText = "No bundled core plays “.\(url.pathExtension)” files"
-      alert.informativeText =
-        "Supported types: \(catalog.allExtensions.map { ".\($0)" }.joined(separator: ", "))"
-      alert.runModal()
-      return
-    }
-    // The cartridge cap protects the slurping load path; need_fullpath
-    // cores stream disc-sized content from disk themselves (ADR 0007).
+    guard let route = routeOrAlert(contentURL: url) else { return }
+    libraryModel.recordPlay(
+      path: url.path,
+      displayName: url.deletingPathExtension().lastPathComponent,
+      coreID: route.coreURL.deletingPathExtension().lastPathComponent,
+      bookmark: try? Bookmark.create(for: url))
+    startGame(route: route, contentPath: url.path, contentAccess: ScopedAccess(url: url))
+  }
+
+  /// The single routing gate: which core plays this, where that core runs,
+  /// and what has to exist first. Every start path comes through here, so
+  /// no caller can skip the boundary checks by forgetting an argument.
+  private func routeOrAlert(contentURL: URL, preferredCoreID: String? = nil)
+    -> ContentRouter.Route?
+  {
     let size =
-      (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? nil
-    if !entry.needsFullPath, let size, size > Self.maxContentBytes {
-      let alert = NSAlert()
-      alert.messageText = "File is too large to be cartridge content"
-      alert.runModal()
-      return
+      (try? FileManager.default.attributesOfItem(atPath: contentURL.path)[.size] as? Int) ?? nil
+    let route: ContentRouter.Route
+    do {
+      route = try ContentRouter.route(
+        contentURL: contentURL, preferredCoreID: preferredCoreID, in: catalog.entries,
+        plugInsDirectory: ContentRouter.bundledPlugInsDirectory, sizeInBytes: size)
+    } catch {
+      switch error {
+      case .unsupported(let fileExtension):
+        let alert = NSAlert()
+        alert.messageText = "No bundled core plays “.\(fileExtension)” files"
+        alert.informativeText =
+          "Supported types: \(catalog.allExtensions.map { ".\($0)" }.joined(separator: ", "))"
+        alert.runModal()
+      case .tooLarge:
+        let alert = NSAlert()
+        alert.messageText = "File is too large to be cartridge content"
+        alert.runModal()
+      }
+      return nil
     }
     // PlayStation needs the user's BIOS staged before a session can boot
     // (ADR 0007); fail precisely, before a window ever opens.
-    if entry.requiresHelper, entry.name.contains("PSX") {
+    if route.prerequisite == .playStationBIOS {
       AppPaths.ensureExists()
       let report = PSXBIOS.stage(files: [], into: AppPaths.system)
       if report.missingRegions.count == PSXBIOS.known.count {
@@ -151,30 +171,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
           "Use File → Import PlayStation BIOS… to add your own BIOS images. "
           + "They are recognized by content, whatever their filenames."
         alert.runModal()
-        return
+        return nil
       }
     }
-    libraryModel.recordPlay(
-      path: url.path,
-      displayName: url.deletingPathExtension().lastPathComponent,
-      coreID: entry.url.deletingPathExtension().lastPathComponent,
-      bookmark: try? Bookmark.create(for: url))
-    startGame(
-      coreURL: entry.url, contentPath: url.path, contentAccess: ScopedAccess(url: url),
-      viaHelper: entry.requiresHelper)
-  }
-
-  /// Extension routing with content-sniffed disambiguation for disc
-  /// formats several cores claim (ADR 0007).
-  private func routedCore(for url: URL) -> CoreCatalog.Entry? {
-    let candidates = catalog.cores(forExtension: url.pathExtension)
-    guard candidates.count > 1 else { return candidates.first }
-    switch DiscSniffer.identify(contentURL: url) {
-    case .playStation:
-      return candidates.first { $0.name.contains("PSX") } ?? candidates.first
-    case .segaCD, .unknown:
-      return candidates.first
-    }
+    return route
   }
 
   @objc private func importBIOSAction(_ sender: Any?) {
@@ -256,9 +256,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
   }
 
   func startGame(
-    coreURL: URL, contentPath: String?, contentAccess: ScopedAccess? = nil,
-    displayOverrides: DisplaySettings? = nil, viaHelper: Bool = false
+    route: ContentRouter.Route, contentPath: String?, contentAccess: ScopedAccess? = nil,
+    displayOverrides: DisplaySettings? = nil
   ) {
+    let coreURL = route.coreURL
     stopGame()
     self.contentAccess = contentAccess
     let resolved = DisplaySettings.resolve(
@@ -285,7 +286,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     // process; a dev override forces bundled cores through the helper too.
     let forceHelper = ProcessInfo.processInfo.environment["CODENAME_FORCE_HELPER"] != nil
     let maybeLoop: (any EmulationLoop)? =
-      (viaHelper || forceHelper)
+      (route.host == .helper || forceHelper)
       ? HelperDisplayLoop(
         layer: gameView.metalLayer, coreURL: coreURL,
         contentPath: contentPath, displayRefresh: refresh,
@@ -390,9 +391,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     panel.begin { [weak self] response in
       guard let self, response == .OK, let url = panel.url else { return }
       guard url.pathExtension == "dylib" else { return }
-      let plugins = Bundle.main.builtInPlugInsURL ?? URL(fileURLWithPath: "/nonexistent")
-      let origin = CoreRouting.origin(of: url, bundledPlugInsDirectory: plugins)
-      guard CoreRouting.requiresHelper(origin) else {
+      let route = ContentRouter.route(
+        forCore: url, plugInsDirectory: ContentRouter.bundledPlugInsDirectory)
+      guard route.host == .helper else {
         self.alert("This core is already bundled with the app.")
         return
       }
@@ -451,8 +452,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
       guard let self, response == .OK, let contentURL = panel.url else { return }
       self.userCoreAccess = ScopedAccess(url: coreURL)
       self.startGame(
-        coreURL: coreURL, contentPath: contentURL.path,
-        contentAccess: ScopedAccess(url: contentURL), viaHelper: true)
+        route: ContentRouter.route(
+          forCore: coreURL, plugInsDirectory: ContentRouter.bundledPlugInsDirectory),
+        contentPath: contentURL.path, contentAccess: ScopedAccess(url: contentURL))
     }
   }
 
@@ -503,11 +505,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let resolved = try? Bookmark.resolve(source.bookmark)
       else { return }
       let contentURL = resolved.url.appendingPathComponent(entry.relativePath)
+      guard let route = routeOrAlert(contentURL: contentURL, preferredCoreID: entry.coreID)
+      else { return }
       libraryModel.recordPlay(
         path: entry.relativePath, displayName: entry.displayName,
-        coreID: entry.coreID, bookmark: nil)
-      startGameRouted(
-        contentURL: contentURL, coreID: entry.coreID,
+        coreID: route.coreURL.deletingPathExtension().lastPathComponent, bookmark: nil)
+      startGame(
+        route: route, contentPath: contentURL.path,
         contentAccess: ScopedAccess(url: resolved.url),
         displayOverrides: entry.displayOverrides)
     } else {
@@ -515,20 +519,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
       recentsStyle.representedObject = entry
       openRecentAction(recentsStyle)
     }
-  }
-
-  private func startGameRouted(
-    contentURL: URL, coreID: String, contentAccess: ScopedAccess,
-    displayOverrides: DisplaySettings? = nil
-  ) {
-    guard
-      let core = catalog.entries.first(where: {
-        $0.url.deletingPathExtension().lastPathComponent == coreID
-      }) ?? catalog.core(forExtension: contentURL.pathExtension)
-    else { return }
-    startGame(
-      coreURL: core.url, contentPath: contentURL.path, contentAccess: contentAccess,
-      displayOverrides: displayOverrides)
   }
 
   private var remapWindow: NSWindow?

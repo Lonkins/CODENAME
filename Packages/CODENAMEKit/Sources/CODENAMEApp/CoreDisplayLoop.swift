@@ -150,7 +150,10 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     AppPaths.ensureExists()
     let environment = EnvironmentHandler(
       systemDirectory: AppPaths.system, saveDirectory: AppPaths.saves)
-    let policy = CoreTrustPolicy(allowedDirectory: coreURL.deletingLastPathComponent())
+    // Derived from the bundle, never from the candidate: a policy built
+    // from the core's own parent directory compares a path to itself and
+    // validates nothing (ADR 0001).
+    let policy = CoreTrustPolicy(allowedDirectory: ContentRouter.bundledPlugInsDirectory)
 
     // Seeded before the session exists: cores declare their options during
     // retro_set_environment, which runs inside CoreSession's initializer.
