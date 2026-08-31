@@ -86,7 +86,8 @@ struct XPCSessionParityTests {
       proxy.openSession(
         corePath: coreURL.path, contentPath: nil,
         systemDirectory: FileManager.default.temporaryDirectory.path,
-        saveDirectory: FileManager.default.temporaryDirectory.path
+        saveDirectory: FileManager.default.temporaryDirectory.path,
+        options: Data()
       ) { ok, width, height, maxWidth, maxHeight, aspect, _, _ in
         continuation.resume(
           returning: ok && width == 320 && height == 240 && maxWidth == 320 && maxHeight == 240
@@ -122,7 +123,8 @@ struct XPCSessionParityTests {
       proxy.openSession(
         corePath: coreURL.path, contentPath: nil,
         systemDirectory: FileManager.default.temporaryDirectory.path,
-        saveDirectory: FileManager.default.temporaryDirectory.path
+        saveDirectory: FileManager.default.temporaryDirectory.path,
+        options: Data()
       ) { ok, _, _, _, _, _, _, _ in continuation.resume(returning: ok) }
     }
     #expect(opened)
@@ -168,7 +170,8 @@ struct XPCSessionParityTests {
       proxy.openSession(
         corePath: coreURL.path, contentPath: nil,
         systemDirectory: FileManager.default.temporaryDirectory.path,
-        saveDirectory: FileManager.default.temporaryDirectory.path
+        saveDirectory: FileManager.default.temporaryDirectory.path,
+        options: Data()
       ) { ok, _, _, _, _, _, _, _ in continuation.resume(returning: ok) }
     }
     #expect(opened)
@@ -197,7 +200,8 @@ struct XPCSessionParityTests {
       proxy.openSession(
         corePath: coreURL.path, contentPath: nil,
         systemDirectory: FileManager.default.temporaryDirectory.path,
-        saveDirectory: FileManager.default.temporaryDirectory.path
+        saveDirectory: FileManager.default.temporaryDirectory.path,
+        options: Data()
       ) { ok, _, _, _, _, _, _, _ in continuation.resume(returning: ok) }
     }
     #expect(opened)
@@ -237,7 +241,8 @@ struct XPCSessionParityTests {
       proxy.openSession(
         corePath: coreURL.path, contentPath: nil,
         systemDirectory: FileManager.default.temporaryDirectory.path,
-        saveDirectory: FileManager.default.temporaryDirectory.path
+        saveDirectory: FileManager.default.temporaryDirectory.path,
+        options: Data()
       ) { ok, _, _, _, _, _, _, _ in continuation.resume(returning: ok) }
     }
     #expect(opened)
