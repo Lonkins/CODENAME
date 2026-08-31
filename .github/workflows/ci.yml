@@ -39,6 +39,24 @@ jobs:
         run: swift format lint --strict --recursive Packages
       - name: Assemble app bundle (ad-hoc signed)
         run: ./Scripts/make-app.sh
+      - name: Assert the release bundle ships nothing developmental
+        run: |
+          APP=build/CODENAME.app
+          # Swift keeps string literals of 15 bytes or fewer as immediates,
+          # so only the longer hook names are greppable — enough to fail
+          # loudly if the #if DEBUG fence around them is ever removed.
+          for hook in CODENAME_OPEN_CONTENT CODENAME_XPC_SMOKE CODENAME_FULLSCREEN_TEST \
+            CODENAME_AUTOSTOP_SECONDS CODENAME_FORCE_HELPER; do
+            if strings -a "$APP/Contents/MacOS/CODENAME" | grep -q "$hook"; then
+              echo "error: release binary contains development hook $hook" >&2
+              exit 1
+            fi
+          done
+          if [ -e "$APP/Contents/PlugIns/libTestCore.dylib" ]; then
+            echo "error: release bundle ships the test core" >&2
+            exit 1
+          fi
+
       - name: Upload app artifact
         uses: actions/upload-artifact@v4
         with:

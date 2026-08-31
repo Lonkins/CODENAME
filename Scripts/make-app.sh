@@ -12,7 +12,9 @@ IDENTITY="${CODESIGN_IDENTITY:--}"
 APP="build/CODENAME.app"
 
 swift build --package-path Packages/CODENAMEKit -c "$CONFIG" --product CODENAMEApp
-swift build --package-path Packages/CODENAMEKit -c "$CONFIG" --product TestCore
+if [ "$CONFIG" != "release" ]; then
+  swift build --package-path Packages/CODENAMEKit -c "$CONFIG" --product TestCore
+fi
 swift build --package-path Packages/CODENAMEKit -c "$CONFIG" --product CoreHostXPC
 BUILD_DIR="$(swift build --package-path Packages/CODENAMEKit -c "$CONFIG" --show-bin-path)"
 BIN="$BUILD_DIR/CODENAMEApp"
@@ -30,8 +32,11 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/PlugIns
 cp -R App/CoreLicences "$APP/Contents/Resources/"
 cp "$BIN" "$APP/Contents/MacOS/CODENAME"
 cp -R "$SPARKLE_FRAMEWORK" "$APP/Contents/Frameworks/"
-# Development core until curated cores land (ADR 0001).
-cp "$BUILD_DIR/libTestCore.dylib" "$APP/Contents/PlugIns/"
+# The test core is a development fixture: it must never reach a user, and
+# never the directory whose contents this process is allowed to dlopen.
+if [ "$CONFIG" != "release" ]; then
+  cp "$BUILD_DIR/libTestCore.dylib" "$APP/Contents/PlugIns/"
+fi
 # Real cores ride along when built (Scripts/build-cores.sh).
 if ls build/cores/*.dylib >/dev/null 2>&1; then
   cp build/cores/*.dylib "$APP/Contents/PlugIns/"

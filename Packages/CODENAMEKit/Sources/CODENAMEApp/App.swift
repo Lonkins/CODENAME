@@ -41,63 +41,76 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     NSApp.activate()
     rescanAllSources()
 
-    // Development/conformance auto-start path (ADR 0005 §5.7).
-    if let core = ProcessInfo.processInfo.environment["CODENAME_CORE"] {
-      startGame(
-        route: ContentRouter.route(
-          forCore: URL(fileURLWithPath: core),
-          plugInsDirectory: ContentRouter.bundledPlugInsDirectory),
-        contentPath: ProcessInfo.processInfo.environment["CODENAME_CONTENT"])
-    } else if let content = ProcessInfo.processInfo.environment["CODENAME_OPEN_CONTENT"] {
-      // Dev-only: drive the full catalog-routed open path headlessly —
-      // BIOS gate, helper routing and all.
-      openContent(at: URL(fileURLWithPath: content))
-    } else if let bundled = bundledTestCoreURL() {
-      startGame(
-        route: ContentRouter.route(
-          forCore: bundled, plugInsDirectory: ContentRouter.bundledPlugInsDirectory),
-        contentPath: nil)
-    }
-
-    // Dev-only: launchd-hosted XPC service smoke (ADR 0006 step B).
-    if ProcessInfo.processInfo.environment["CODENAME_XPC_SMOKE"] != nil {
-      let connection = NSXPCConnection(serviceName: "dev.CODENAME.CoreHost")
-      connection.remoteObjectInterface = CoreHostWire.interface()
-      connection.resume()
-      let proxy = connection.remoteObjectProxyWithErrorHandler { error in
-        NSLog("xpc smoke failed: \(error.localizedDescription)")
-      }
-      (proxy as? CoreHostProtocol)?.handshake(version: CoreHostWire.version) { version in
-        NSLog("xpc smoke: helper version %d", version)
-      }
-    }
-
-    // Dev-only: headless fullscreen proof — toggle, then log geometry.
-    if ProcessInfo.processInfo.environment["CODENAME_FULLSCREEN_TEST"] != nil {
-      DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-        self?.gameWindow?.toggleFullScreen(nil)
-      }
-      DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
-        guard let window = self?.gameWindow, let view = window.contentView as? GameView else {
-          return
-        }
-        NSLog(
-          "fullscreen test: frame %.0fx%.0f drawable %.0fx%.0f styleMask fullScreen=%d",
-          window.frame.width, window.frame.height,
-          view.metalLayer.drawableSize.width, view.metalLayer.drawableSize.height,
-          window.styleMask.contains(.fullScreen) ? 1 : 0)
-      }
-    }
-
-    // Dev-only: exercise the stop path without UI automation.
-    if let seconds = ProcessInfo.processInfo.environment["CODENAME_AUTOSTOP_SECONDS"]
-      .flatMap(Double.init)
-    {
-      DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
-        self?.stopGame()
-      }
-    }
+    #if DEBUG
+      developmentHooks()
+    #endif
   }
+
+  #if DEBUG
+    /// Conformance and headless-verification hooks. Compiled out of release
+    /// builds: a shipped binary must not read a core path out of the
+    /// environment and load it (ADR 0001).
+    private func developmentHooks() {
+      // Development/conformance auto-start path (ADR 0005 §5.7).
+      if let core = ProcessInfo.processInfo.environment["CODENAME_CORE"] {
+        startGame(
+          route: ContentRouter.route(
+            forCore: URL(fileURLWithPath: core),
+            plugInsDirectory: ContentRouter.bundledPlugInsDirectory),
+          contentPath: ProcessInfo.processInfo.environment["CODENAME_CONTENT"])
+      } else if let content = ProcessInfo.processInfo.environment["CODENAME_OPEN_CONTENT"] {
+        // Dev-only: drive the full catalog-routed open path headlessly —
+        // BIOS gate, helper routing and all.
+        openContent(at: URL(fileURLWithPath: content))
+      } else if let bundled = bundledTestCoreURL() {
+        startGame(
+          route: ContentRouter.route(
+            forCore: bundled, plugInsDirectory: ContentRouter.bundledPlugInsDirectory),
+          contentPath: nil)
+      }
+
+      // Dev-only: launchd-hosted XPC service smoke (ADR 0006 step B).
+      if ProcessInfo.processInfo.environment["CODENAME_XPC_SMOKE"] != nil {
+        let connection = NSXPCConnection(serviceName: "dev.CODENAME.CoreHost")
+        connection.remoteObjectInterface = CoreHostWire.interface()
+        connection.resume()
+        let proxy = connection.remoteObjectProxyWithErrorHandler { error in
+          NSLog("xpc smoke failed: \(error.localizedDescription)")
+        }
+        (proxy as? CoreHostProtocol)?.handshake(version: CoreHostWire.version) { version in
+          NSLog(
+            "xpc smoke: helper version %d, wire %d, %@", version, CoreHostWire.version,
+            version == CoreHostWire.version ? "match" : "MISMATCH")
+        }
+      }
+
+      // Dev-only: headless fullscreen proof — toggle, then log geometry.
+      if ProcessInfo.processInfo.environment["CODENAME_FULLSCREEN_TEST"] != nil {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+          self?.gameWindow?.toggleFullScreen(nil)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+          guard let window = self?.gameWindow, let view = window.contentView as? GameView else {
+            return
+          }
+          NSLog(
+            "fullscreen test: frame %.0fx%.0f drawable %.0fx%.0f styleMask fullScreen=%d",
+            window.frame.width, window.frame.height,
+            view.metalLayer.drawableSize.width, view.metalLayer.drawableSize.height,
+            window.styleMask.contains(.fullScreen) ? 1 : 0)
+        }
+      }
+
+      // Dev-only: exercise the stop path without UI automation.
+      if let seconds = ProcessInfo.processInfo.environment["CODENAME_AUTOSTOP_SECONDS"]
+        .flatMap(Double.init)
+      {
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
+          self?.stopGame()
+        }
+      }
+    }
+  #endif
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
     false
@@ -284,7 +297,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     let refresh = Double(window.screen?.maximumFramesPerSecond ?? 60)
     // ADR 0007: helper-only cores and user-supplied cores run out of
     // process; a dev override forces bundled cores through the helper too.
-    let forceHelper = ProcessInfo.processInfo.environment["CODENAME_FORCE_HELPER"] != nil
+    #if DEBUG
+      // Dev-only: run a bundled core through the helper as well. Forcing
+      // isolation on can only tighten containment, never loosen it.
+      let forceHelper = ProcessInfo.processInfo.environment["CODENAME_FORCE_HELPER"] != nil
+    #else
+      let forceHelper = false
+    #endif
     let maybeLoop: (any EmulationLoop)? =
       (route.host == .helper || forceHelper)
       ? HelperDisplayLoop(
@@ -588,11 +607,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
   }
 
-  private func bundledTestCoreURL() -> URL? {
-    guard let plugins = Bundle.main.builtInPlugInsURL else { return nil }
-    let testCore = plugins.appendingPathComponent("libTestCore.dylib")
-    return FileManager.default.fileExists(atPath: testCore.path) ? testCore : nil
-  }
+  #if DEBUG
+    private func bundledTestCoreURL() -> URL? {
+      guard let plugins = Bundle.main.builtInPlugInsURL else { return nil }
+      let testCore = plugins.appendingPathComponent("libTestCore.dylib")
+      return FileManager.default.fileExists(atPath: testCore.path) ? testCore : nil
+    }
+  #endif
 
   private func loadMapping(forCore coreURL: URL) -> ButtonMapping {
     let file = AppPaths.mappings
