@@ -42,6 +42,9 @@ public final class CoreOptions {
   public private(set) var definitions: [CoreOption] = []
 
   private var selected: [String: String] = [:]
+  /// Selections restored from disk, waiting for the core to declare the keys
+  /// they belong to. Anything the core does not offer is dropped at that point.
+  private var preferred: [String: String] = [:]
   private var buffers: [String: UnsafeMutablePointer<CChar>] = [:]
   /// Buffers a core may still hold a pointer to. The interface gives no moment
   /// at which a handed-out string is provably dead, so nothing is freed until
@@ -65,10 +68,13 @@ public final class CoreOptions {
     var kept: [String: String] = [:]
     var reverted = false
     for option in options {
-      if let existing = selected[option.key],
-        option.values.contains(where: { $0.value == existing })
-      {
-        kept[option.key] = existing
+      // An in-session choice outranks a stored one, which outranks the
+      // core's default; each only if the core still offers it.
+      let candidates = [selected[option.key], preferred[option.key]].compactMap { $0 }
+      if let offered = candidates.first(where: { value in
+        option.values.contains { $0.value == value }
+      }) {
+        kept[option.key] = offered
       } else {
         kept[option.key] = option.defaultValue
         if let existing = selected[option.key], existing != option.defaultValue { reverted = true }
@@ -85,6 +91,15 @@ public final class CoreOptions {
   }
 
   public func value(for key: String) -> String? { selected[key] }
+
+  /// Every resolved selection, for persisting between sessions.
+  public var selectedValues: [String: String] { selected }
+
+  /// Seeds selections restored from disk. Call before the core declares its
+  /// options; a value the core turns out not to offer is discarded then.
+  public func prefer(_ values: [String: String]) {
+    preferred = values
+  }
 
   /// Records the user's choice. Refuses keys the core never declared and values
   /// it does not offer, so a stale stored setting can never reach a core.
@@ -231,5 +246,29 @@ extension CoreOptions {
     return CoreOption(
       key: String(cString: key), title: String(cString: desc), values: values,
       defaultValue: defaultValue)
+  }
+}
+
+/// Core option selections on disk: one JSON file per core, alongside the
+/// per-core button mappings.
+public enum CoreOptionsStore {
+  /// Merges over what is already stored: a core can declare a different option
+  /// set for different content, and a session must not drop the rest.
+  public static func save(_ values: [String: String], to url: URL) throws {
+    try FileManager.default.createDirectory(
+      at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let merged = (try load(from: url)).merging(values) { _, new in new }
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    try encoder.encode(merged).write(to: url, options: .atomic)
+  }
+
+  /// Absent or unreadable means no selections — a corrupt file must not stop
+  /// a core from loading.
+  public static func load(from url: URL) throws -> [String: String] {
+    guard let data = try? Data(contentsOf: url),
+      let values = try? JSONDecoder().decode([String: String].self, from: data)
+    else { return [:] }
+    return values
   }
 }

@@ -146,11 +146,21 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     }
   }
 
+  static func optionsURL(forCore coreURL: URL) -> URL {
+    AppPaths.options
+      .appendingPathComponent(coreURL.deletingPathExtension().lastPathComponent + ".json")
+  }
+
   private func setUpOnCoreThread() {
     AppPaths.ensureExists()
     let environment = EnvironmentHandler(
       systemDirectory: AppPaths.system, saveDirectory: AppPaths.saves)
     let policy = CoreTrustPolicy(allowedDirectory: coreURL.deletingLastPathComponent())
+
+    // Seeded before the session exists: cores declare their options during
+    // retro_set_environment, which runs inside CoreSession's initializer.
+    let optionsURL = Self.optionsURL(forCore: coreURL)
+    environment.options.prefer((try? CoreOptionsStore.load(from: optionsURL)) ?? [:])
 
     do {
       let session = try CoreSession(
@@ -160,6 +170,14 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     } catch {
       NSLog("core load failed: \(error)")
       return
+    }
+
+    // Written back so the file exists with every option the core offers,
+    // which is what makes it editable between sessions.
+    do {
+      try CoreOptionsStore.save(environment.options.selectedValues, to: optionsURL)
+    } catch {
+      NSLog("core options save failed: \(error)")
     }
     presenter = MetalPresenter()
 
