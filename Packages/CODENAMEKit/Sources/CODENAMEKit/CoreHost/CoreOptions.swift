@@ -94,6 +94,11 @@ public final class CoreOptions {
 
   /// Answers `GET_VARIABLE_UPDATE`: true once after any change, then false
   /// until the next one.
+  ///
+  /// The header words the flag as "changed since the last `GET_VARIABLE`",
+  /// but clearing it there loses changes for the cores that read a variable
+  /// outside their update check — so it clears here, on the query that
+  /// reports it, which is also what cores are tested against in practice.
   func takeUpdateFlag() -> Bool {
     defer { changedSinceQuery = false }
     return changedSinceQuery
