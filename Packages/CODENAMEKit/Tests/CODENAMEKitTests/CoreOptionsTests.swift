@@ -611,17 +611,25 @@ private final class OptionsV1Block {
   }
 
   @Test func everyOptionCommandIsHandledNotCounted() {
+    // Each command gets data of the type it documents — NULL is the legal
+    // "no declarations" form for the setters — because the handler
+    // dereferences what it is given, exactly as the C ABI entitles it to.
     let handler = makeHandler()
-    var scratch: UInt32 = 0
+    var version: UInt32 = 0
+    _ = withUnsafeMutablePointer(to: &version) {
+      handler.handle(command: UInt32(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION), data: $0)
+    }
     for command in [
-      RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, RETRO_ENVIRONMENT_SET_VARIABLES,
-      RETRO_ENVIRONMENT_SET_CORE_OPTIONS, RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL,
-      RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2, RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2_INTL,
-      RETRO_ENVIRONMENT_GET_VARIABLE, RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE,
+      RETRO_ENVIRONMENT_SET_VARIABLES, RETRO_ENVIRONMENT_SET_CORE_OPTIONS,
+      RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL, RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2,
+      RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2_INTL,
     ] {
-      _ = withUnsafeMutablePointer(to: &scratch) {
-        handler.handle(command: UInt32(command), data: $0)
-      }
+      _ = handler.handle(command: UInt32(command), data: nil)
+    }
+    _ = getVariable(handler, key: "anything")
+    var updated = false
+    _ = withUnsafeMutablePointer(to: &updated) {
+      handler.handle(command: UInt32(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE), data: $0)
     }
     #expect(handler.unknownCommandCount == 0)
   }
