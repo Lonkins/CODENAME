@@ -18,10 +18,16 @@ struct HelperSessionTests {
     let proxy = try #require(maybeProxy)
     let session = HelperSession(proxy: proxy)
     session.bind(connection: host.clientConnection)
-    let av = session.open(
-      corePath: coreURL.path, contentPath: nil,
-      systemDirectory: FileManager.default.temporaryDirectory.path,
-      saveDirectory: FileManager.default.temporaryDirectory.path)
+    let temporary = FileManager.default.temporaryDirectory.path
+    // The session slot is process-exclusive and a dead peer's session is
+    // released asynchronously, so give the helper a moment to let go.
+    var av: HelperSession.AVInfo?
+    for _ in 0..<50 where av == nil {
+      av = session.open(
+        corePath: coreURL.path, contentPath: nil,
+        systemDirectory: temporary, saveDirectory: temporary)
+      if av == nil { Thread.sleep(forTimeInterval: 0.05) }
+    }
     #expect(av != nil)
     return session
   }
@@ -123,6 +129,9 @@ struct HelperSessionTests {
     #expect(lost.wait(timeout: .now() + 5) == .success)
     #expect(session.isAlive == false)
     #expect(session.runFrame { _ in } == .sessionLost)
+
+    let recovery = LoopbackCoreHost()
+    try openSession(recovery).close()
   }
 
   @Test func closingADeadSessionDoesNotWaitForTheReplyTimeout() throws {
@@ -139,30 +148,23 @@ struct HelperSessionTests {
     #expect(session.saveRAMSnapshot() == nil)
     session.close()
     #expect(Date().timeIntervalSince(started) < 1)
+
+    let recovery = LoopbackCoreHost()
+    try openSession(recovery).close()
   }
 
   @Test func aSessionDoesNotOutliveThePeerThatOpenedIt() throws {
     // The mirror of the client-side fix: the helper hosts one session at a
     // time, so a peer that dies without closing would strand a loaded core
-    // and its content until the process exits.
+    // and its content until the process exits — and no later client could
+    // open one at all.
     let abandoned = LoopbackCoreHost()
     _ = try openSession(abandoned)
     abandoned.invalidate()
 
     let host = LoopbackCoreHost()
-    let maybeProxy = host.proxy(errorHandler: { _ in })
-    let proxy = try #require(maybeProxy)
-    let session = HelperSession(proxy: proxy)
-    session.bind(connection: host.clientConnection)
-    var opened: HelperSession.AVInfo?
-    let temporary = FileManager.default.temporaryDirectory.path
-    for _ in 0..<50 where opened == nil {
-      opened = session.open(
-        corePath: coreURL.path, contentPath: nil,
-        systemDirectory: temporary, saveDirectory: temporary)
-      if opened == nil { Thread.sleep(forTimeInterval: 0.05) }
-    }
-    #expect(opened != nil)
+    let session = try openSession(host)
+    #expect(session.avInfo != nil)
     session.close()
   }
 }
