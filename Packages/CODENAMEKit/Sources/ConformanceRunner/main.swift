@@ -104,6 +104,7 @@ func runViaHelper(
   nonisolated(unsafe) var av: (ok: Bool, fps: Double, rate: Double) = (false, 0, 0)
   proxy.openSession(
     corePath: coreURL.path, contentPath: content, contentBytes: Data(),
+    disc: Data(), contentHandles: [],
     systemDirectory: systemDir,
     saveDirectory: FileManager.default.temporaryDirectory.path,
     options: Data()

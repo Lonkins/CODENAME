@@ -37,6 +37,9 @@ final class HelperDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
   private var lastFlushedSaveRAM: Data?
   private var framesSinceFlush = 0
   private var reportedSessionLost = false
+  /// Open for the session's lifetime: the helper's staged content is
+  /// symlinks to these descriptors.
+  private var contentHandles: [FileHandle] = []
 
   let displaySettings: LiveDisplaySettings
   /// Called on the main queue when the helper dies mid-session; the app
@@ -121,6 +124,8 @@ final class HelperDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     audioOutput = nil
     flushSaveRAM()
     session.close()
+    for handle in contentHandles { try? handle.close() }
+    contentHandles = []
     connection?.invalidate()
     connection = nil
     presenter = nil
@@ -191,12 +196,26 @@ final class HelperDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     return FileManager.default.contents(atPath: contentPath)
   }
 
+  /// Disc content the helper cannot open by path: hand it the descriptors
+  /// for everything the cue names, and let it rebuild the layout its side.
+  private func discHandoff() -> (payload: DiscStaging.Payload, handles: [FileHandle])? {
+    guard contentNeedsFullPath, let contentPath else { return nil }
+    guard let handoff = try? DiscStaging.prepare(contentAt: URL(fileURLWithPath: contentPath))
+    else { return nil }
+    let handles = handoff.files.compactMap { try? FileHandle(forReadingFrom: $0) }
+    guard handles.count == handoff.files.count else { return nil }
+    return (handoff.payload, handles)
+  }
+
   private func setUpOnLoopThread() {
     AppPaths.ensureExists()
+    let disc = discHandoff()
+    contentHandles = disc?.handles ?? []
     guard
       let av = session.open(
         corePath: coreURL.path, contentPath: contentPath,
         contentBytes: cartridgeBytes(),
+        disc: disc?.payload, contentHandles: disc?.handles ?? [],
         systemDirectory: AppPaths.system.path, saveDirectory: AppPaths.saves.path,
         options: (try? CoreOptionsStore.load(from: AppPaths.optionsFile(forCore: coreURL)))
           ?? [:])
