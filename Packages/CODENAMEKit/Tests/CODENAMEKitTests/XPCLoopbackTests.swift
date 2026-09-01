@@ -87,7 +87,8 @@ struct XPCSessionParityTests {
     let opened: Bool = await withCheckedContinuation { continuation in
       proxy.openSession(
         corePath: coreURL.path, contentPath: missing,
-        contentBytes: Data(repeating: 0xAB, count: 2048), disc: Data(), contentHandles: [],
+        contentBytes: Data(repeating: 0xAB, count: 2048), coreBytes: Data(), disc: Data(),
+        contentHandles: [],
         system: Data(), systemHandles: [],
         systemDirectory: FileManager.default.temporaryDirectory.path,
         saveDirectory: FileManager.default.temporaryDirectory.path,
@@ -111,7 +112,7 @@ struct XPCSessionParityTests {
 
     let opened: Bool = await withCheckedContinuation { continuation in
       proxy.openSession(
-        corePath: coreURL.path, contentPath: nil, contentBytes: Data(),
+        corePath: coreURL.path, contentPath: nil, contentBytes: Data(), coreBytes: Data(),
         disc: Data(), contentHandles: [], system: Data(), systemHandles: [],
         systemDirectory: FileManager.default.temporaryDirectory.path,
         saveDirectory: FileManager.default.temporaryDirectory.path,
@@ -149,7 +150,7 @@ struct XPCSessionParityTests {
 
     let opened: Bool = await withCheckedContinuation { continuation in
       proxy.openSession(
-        corePath: coreURL.path, contentPath: nil, contentBytes: Data(),
+        corePath: coreURL.path, contentPath: nil, contentBytes: Data(), coreBytes: Data(),
         disc: Data(), contentHandles: [], system: Data(), systemHandles: [],
         systemDirectory: FileManager.default.temporaryDirectory.path,
         saveDirectory: FileManager.default.temporaryDirectory.path,
@@ -197,7 +198,7 @@ struct XPCSessionParityTests {
 
     let opened: Bool = await withCheckedContinuation { continuation in
       proxy.openSession(
-        corePath: coreURL.path, contentPath: nil, contentBytes: Data(),
+        corePath: coreURL.path, contentPath: nil, contentBytes: Data(), coreBytes: Data(),
         disc: Data(), contentHandles: [], system: Data(), systemHandles: [],
         systemDirectory: FileManager.default.temporaryDirectory.path,
         saveDirectory: FileManager.default.temporaryDirectory.path,
@@ -228,7 +229,7 @@ struct XPCSessionParityTests {
 
     let opened: Bool = await withCheckedContinuation { continuation in
       proxy.openSession(
-        corePath: coreURL.path, contentPath: nil, contentBytes: Data(),
+        corePath: coreURL.path, contentPath: nil, contentBytes: Data(), coreBytes: Data(),
         disc: Data(), contentHandles: [], system: Data(), systemHandles: [],
         systemDirectory: FileManager.default.temporaryDirectory.path,
         saveDirectory: FileManager.default.temporaryDirectory.path,
@@ -270,7 +271,7 @@ struct XPCSessionParityTests {
 
     let opened: Bool = await withCheckedContinuation { continuation in
       proxy.openSession(
-        corePath: coreURL.path, contentPath: nil, contentBytes: Data(),
+        corePath: coreURL.path, contentPath: nil, contentBytes: Data(), coreBytes: Data(),
         disc: Data(), contentHandles: [], system: Data(), systemHandles: [],
         systemDirectory: FileManager.default.temporaryDirectory.path,
         saveDirectory: FileManager.default.temporaryDirectory.path,
@@ -319,13 +320,17 @@ struct XPCSessionParityTests {
     let proxy = try #require(maybeProxy)
 
     let good: (Bool, String) = await withCheckedContinuation { continuation in
-      proxy.probeCore(path: coreURL.path) { continuation.resume(returning: ($0, $1)) }
+      proxy.probeCore(path: coreURL.path, bytes: Data()) {
+        continuation.resume(returning: ($0, $1))
+      }
     }
     #expect(good.0)
     #expect(good.1 == "CODENAME Test Core")
 
     let bad: Bool = await withCheckedContinuation { continuation in
-      proxy.probeCore(path: "/usr/lib/libz.dylib") { ok, _ in continuation.resume(returning: ok) }
+      proxy.probeCore(path: "/usr/lib/libz.dylib", bytes: Data()) { ok, _ in
+        continuation.resume(returning: ok)
+      }
     }
     #expect(!bad)
   }

@@ -144,4 +144,25 @@ import Testing
     #expect(handoff.files.isEmpty)
     #expect(handoff.payload.referencedNames.isEmpty)
   }
+
+  // MARK: - A core the receiving process cannot open by path
+
+  @Test func aCoreIsStagedFromItsBytes() throws {
+    // Unauthenticated cores live wherever the user keeps them, which a
+    // sandboxed helper cannot reach. The app reads the file — it must never
+    // load it — and the helper writes it inside its own container to open.
+    let staging = root.appendingPathComponent("cores", isDirectory: true)
+    let staged = try DiscStaging.stageCore(
+      named: "user_libretro.dylib", bytes: Data([0xCF, 0xFA, 0xED, 0xFE, 0x01]), in: staging)
+    #expect(staged.lastPathComponent == "user_libretro.dylib")
+    #expect(try Data(contentsOf: staged) == Data([0xCF, 0xFA, 0xED, 0xFE, 0x01]))
+  }
+
+  @Test func stagingRefusesAPathThatEscapesTheDirectory() throws {
+    let staging = root.appendingPathComponent("cores", isDirectory: true)
+    #expect(throws: DiscStaging.Failure.unreadableContent("../escape.dylib")) {
+      try DiscStaging.stageCore(
+        named: "../escape.dylib", bytes: Data([0xCF, 0xFA, 0xED, 0xFE]), in: staging)
+    }
+  }
 }

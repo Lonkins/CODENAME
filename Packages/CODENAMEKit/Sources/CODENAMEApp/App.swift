@@ -309,8 +309,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     if route.host == .helper || forceHelper {
       let helper = HelperDisplayLoop(
         layer: gameView.metalLayer, coreURL: coreURL,
-        contentPath: contentPath, contentNeedsFullPath: route.needsFullPath,
-        displayRefresh: refresh, displaySettings: LiveDisplaySettings(resolved))
+        contentPath: contentPath, displayRefresh: refresh,
+        displaySettings: LiveDisplaySettings(resolved))
       helper?.onSessionLost = { [weak self] message in
         MainActor.assumeIsolated {
           guard let self, self.displayLoop != nil else { return }
@@ -450,7 +450,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         )
       }
     }
-    (proxy as? CoreHostProtocol)?.probeCore(path: url.path) { [weak self] ok, name in
+    // Reading the file is not loading it: ADR 0001's invariant is that this
+    // process never dlopens an unauthenticated core, and it does not.
+    let bytes = (try? Data(contentsOf: url)) ?? Data()
+    (proxy as? CoreHostProtocol)?.probeCore(path: url.path, bytes: bytes) {
+      [weak self] ok, name in
       DispatchQueue.main.async {
         guard ok else {
           self?.finishProbe(

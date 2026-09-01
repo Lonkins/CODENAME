@@ -29,8 +29,12 @@ import IOSurface
   /// through GET_SYSTEM_DIRECTORY, which otherwise points into the app's
   /// container. `systemDirectory` remains the fallback while the helper can
   /// still read it.
+  /// v7: `coreBytes` carries a core the helper cannot open by path —
+  /// unauthenticated cores live wherever the user keeps them, outside the
+  /// sandboxed helper's reach. The app reads the file and never loads it;
+  /// the helper writes it into its own container and opens it there.
   func openSession(
-    corePath: String, contentPath: String?, contentBytes: Data,
+    corePath: String, contentPath: String?, contentBytes: Data, coreBytes: Data,
     disc: Data, contentHandles: [FileHandle],
     system: Data, systemHandles: [FileHandle],
     systemDirectory: String, saveDirectory: String, options: Data,
@@ -49,7 +53,7 @@ import IOSurface
 
   /// Step D: validate an arbitrary core WITHOUT a session — the untrusted
   /// dylib is dlopen'd only inside the helper process. Reply: ok, coreName.
-  func probeCore(path: String, reply: @escaping @Sendable (Bool, String) -> Void)
+  func probeCore(path: String, bytes: Data, reply: @escaping @Sendable (Bool, String) -> Void)
 
   /// Save-state round trip across the boundary (owned bytes, per the
   /// transport contract).
@@ -102,7 +106,7 @@ extension LibretroPixelFormat {
 }
 
 public enum CoreHostWire {
-  public static let version = 6
+  public static let version = 7
 
   public static func interface() -> NSXPCInterface {
     let interface = NSXPCInterface(with: CoreHostProtocol.self)
@@ -120,10 +124,10 @@ public enum CoreHostWire {
       NSSet(array: [NSArray.self, FileHandle.self]) as? Set<AnyHashable> ?? []
     let openSelector = #selector(
       CoreHostProtocol.openSession(
-        corePath:contentPath:contentBytes:disc:contentHandles:system:systemHandles:systemDirectory:
-        saveDirectory:options:reply:))
-    interface.setClasses(handleClasses, for: openSelector, argumentIndex: 4, ofReply: false)
-    interface.setClasses(handleClasses, for: openSelector, argumentIndex: 6, ofReply: false)
+        corePath:contentPath:contentBytes:coreBytes:disc:contentHandles:system:systemHandles:
+        systemDirectory:saveDirectory:options:reply:))
+    interface.setClasses(handleClasses, for: openSelector, argumentIndex: 5, ofReply: false)
+    interface.setClasses(handleClasses, for: openSelector, argumentIndex: 7, ofReply: false)
     return interface
   }
 }
@@ -139,6 +143,19 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
   private var contentHandles: [FileHandle] = []
   /// Held so option state can be reported back; same queue confinement.
   private var environment: EnvironmentHandler?
+
+  /// The path to open a core from: the given one when this process can read
+  /// it (cores bundled with the helper), otherwise a copy of the bytes the
+  /// app sent, written inside this process's own container.
+  static func resolveCore(path: String, bytes: Data) -> URL? {
+    if FileManager.default.isReadableFile(atPath: path) {
+      return URL(fileURLWithPath: path)
+    }
+    guard !bytes.isEmpty else { return nil }
+    return try? DiscStaging.stageCore(
+      named: (path as NSString).lastPathComponent, bytes: bytes,
+      in: stagingDirectory().appendingPathComponent("Cores", isDirectory: true))
+  }
 
   /// Inside the helper's own temporary directory, which is inside its
   /// container once the service is sandboxed.
@@ -156,14 +173,18 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
   }
 
   public func openSession(
-    corePath: String, contentPath: String?, contentBytes: Data,
+    corePath: String, contentPath: String?, contentBytes: Data, coreBytes: Data,
     disc: Data, contentHandles: [FileHandle],
     system: Data, systemHandles: [FileHandle],
     systemDirectory: String, saveDirectory: String, options: Data,
     reply: @escaping @Sendable (Bool, Int, Int, Int, Int, Double, Double, Double) -> Void
   ) {
     coreQueue.async { [self] in
-      let coreURL = URL(fileURLWithPath: corePath)
+      // A core the helper cannot reach arrives as bytes and is opened from
+      // this process's own container instead.
+      guard let coreURL = Self.resolveCore(path: corePath, bytes: coreBytes) else {
+        return reply(false, 0, 0, 0, 0, 0, 0, 0)
+      }
       // Descriptors must outlive the session: the staged symlinks point at
       // them, and the core opens tracks lazily.
       self.contentHandles = contentHandles + systemHandles
@@ -187,9 +208,18 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
         }
         loadPath = staged.path
       }
+      // Save data crosses the wire as snapshots (retro_get_memory_data), so
+      // nothing reads this directory back. It exists because a core may
+      // write files of its own, and inside the sandbox the app's path is
+      // not writable — that would be a silent failure at the core's first
+      // fopen. Container-local keeps such writes working for the session.
+      let saves = Self.stagingDirectory().appendingPathComponent("Saves", isDirectory: true)
+      try? FileManager.default.createDirectory(at: saves, withIntermediateDirectories: true)
+      let resolvedSaveDirectory =
+        FileManager.default.isWritableFile(atPath: saveDirectory) ? saveDirectory : saves.path
       let environment = EnvironmentHandler(
         systemDirectory: URL(fileURLWithPath: resolvedSystemDirectory),
-        saveDirectory: URL(fileURLWithPath: saveDirectory),
+        saveDirectory: URL(fileURLWithPath: resolvedSaveDirectory),
         jitCapable: true)
       // Seeded before the session exists, for the same reason as in-process.
       let stored = (try? JSONDecoder().decode([String: String].self, from: options)) ?? [:]
@@ -207,6 +237,7 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
           av?.maxSize.width ?? 0, av?.maxSize.height ?? 0,
           av?.aspectRatio ?? 0, av?.framesPerSecond ?? 0, av?.audioSampleRate ?? 0)
       } catch {
+        NSLog("helper openSession failed: \(error) core=\(coreURL.lastPathComponent)")
         reply(false, 0, 0, 0, 0, 0, 0, 0)
       }
     }
@@ -251,9 +282,13 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
     }
   }
 
-  public func probeCore(path: String, reply: @escaping @Sendable (Bool, String) -> Void) {
+  public func probeCore(
+    path: String, bytes: Data, reply: @escaping @Sendable (Bool, String) -> Void
+  ) {
     coreQueue.async {
-      let url = URL(fileURLWithPath: path)
+      guard let url = Self.resolveCore(path: path, bytes: bytes) else {
+        return reply(false, "")
+      }
       let policy = CoreTrustPolicy(allowedDirectory: url.deletingLastPathComponent())
       guard let library = try? CoreLibrary(url: url, policy: policy) else {
         return reply(false, "")

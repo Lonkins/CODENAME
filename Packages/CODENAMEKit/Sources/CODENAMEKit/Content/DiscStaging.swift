@@ -80,6 +80,29 @@ public enum DiscStaging {
       files: Array(files))
   }
 
+  /// Receiver side: write a core the sender read but must never load, so it
+  /// can be opened from a directory this process actually owns. The name is
+  /// taken as a leaf only — a sender does not get to choose the location.
+  public static func stageCore(
+    named name: String, bytes: Data, in directory: URL
+  ) throws(Failure) -> URL {
+    let leaf = (name as NSString).lastPathComponent
+    guard !bytes.isEmpty, leaf == name, !leaf.isEmpty, leaf != ".", leaf != ".." else {
+      throw .unreadableContent(name)
+    }
+    do {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      let destination = directory.appendingPathComponent(leaf)
+      try bytes.write(to: destination, options: .atomic)
+      // dyld maps the image executable; a plain 0644 write is not enough.
+      try FileManager.default.setAttributes(
+        [.posixPermissions: 0o700], ofItemAtPath: destination.path)
+      return destination
+    } catch {
+      throw .unreadableContent(name)
+    }
+  }
+
   /// Receiver side: rebuild the content in `directory` from the descriptors.
   /// Returns the path to hand the core — the staged file, or the directory
   /// itself when the payload names no single one.

@@ -68,7 +68,7 @@ public final class HelperSession: @unchecked Sendable {
   /// Opens the session and sizes the shared surface from MAX geometry
   /// (cores switch video modes mid-session). Nil on failure or timeout.
   public func open(
-    corePath: String, contentPath: String?, contentBytes: Data? = nil,
+    corePath: String, contentPath: String?, contentBytes: Data? = nil, coreBytes: Data? = nil,
     disc: DiscStaging.Payload? = nil, contentHandles: [FileHandle] = [],
     system: DiscStaging.Payload? = nil, systemHandles: [FileHandle] = [],
     systemDirectory: String, saveDirectory: String, options: [String: String] = [:]
@@ -79,6 +79,7 @@ public final class HelperSession: @unchecked Sendable {
     let encoded = (try? JSONEncoder().encode(options)) ?? Data()
     proxy.openSession(
       corePath: corePath, contentPath: contentPath, contentBytes: contentBytes ?? Data(),
+      coreBytes: coreBytes ?? Data(),
       disc: disc.flatMap { try? JSONEncoder().encode($0) } ?? Data(),
       contentHandles: contentHandles,
       system: system.flatMap { try? JSONEncoder().encode($0) } ?? Data(),
