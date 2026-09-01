@@ -145,9 +145,41 @@ public final class LibraryModel {
   ) {
     let previous = library.entries.filter { $0.sourceID == sourceID }
     library.entries.removeAll { $0.sourceID == sourceID }
+
+    let scannedPaths = Set(games.map(\.relativePath))
+    // Entries whose exact path is gone may simply have moved. Only a name
+    // that is unique on both sides can be adopted — with two same-named
+    // files there is no way to tell which moved, and guessing would hand a
+    // game another game's saves.
+    let departed = previous.filter { !scannedPaths.contains($0.relativePath) }
+    let arrivals = games.filter { game in
+      !previous.contains { $0.relativePath == game.relativePath }
+    }
+    var adoptable: [String: GameEntry] = [:]
+    for entry in departed {
+      let name = (entry.relativePath as NSString).lastPathComponent
+      let key = "\(entry.coreID)/\(name)"
+      if adoptable[key] == nil
+        && departed.filter({
+          ($0.relativePath as NSString).lastPathComponent == name && $0.coreID == entry.coreID
+        }).count == 1
+      {
+        adoptable[key] = entry
+      }
+    }
+
     for game in games {
       guard let coreID = coreIDFor(game.ext) else { continue }
-      let existing = previous.first { $0.relativePath == game.relativePath }
+      var existing = previous.first { $0.relativePath == game.relativePath }
+      if existing == nil {
+        let name = (game.relativePath as NSString).lastPathComponent
+        let sameNamedArrivals = arrivals.filter {
+          ($0.relativePath as NSString).lastPathComponent == name
+        }
+        if sameNamedArrivals.count == 1 {
+          existing = adoptable.removeValue(forKey: "\(coreID)/\(name)")
+        }
+      }
       library.entries.append(
         GameEntry(
           id: existing?.id ?? UUID(), sourceID: sourceID, relativePath: game.relativePath,
