@@ -11,6 +11,8 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
   private let layer: CAMetalLayer
   private let coreURL: URL
   private let contentPath: String?
+  /// Which library entry this session's saves belong to (ADR 0004).
+  private let entryID: UUID?
   private let displayRefresh: Double
   private var session: CoreSession?
   private var presenter: MetalPresenter?
@@ -27,19 +29,23 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
   private var coreThreadShouldRun = true  // flipped on the core thread itself, in teardown
   private let saveStore = SaveRAMStore()
   private let stateStore = SaveStateStore()
-  private var saveIdentity: (core: String, content: String)?
+  /// The library entry this session belongs to; nil for sessions with
+  /// no entry (a user-supplied core picking its own content), which
+  /// simply persist nothing.
+  private var saveIdentity: UUID?
   private var lastFlushedSaveRAM: [UInt8]?
   private var framesSinceFlush = 0
 
   let displaySettings: LiveDisplaySettings
 
   init(
-    layer: CAMetalLayer, coreURL: URL, contentPath: String?, displayRefresh: Double,
-    displaySettings: LiveDisplaySettings
+    layer: CAMetalLayer, coreURL: URL, contentPath: String?, entryID: UUID?,
+    displayRefresh: Double, displaySettings: LiveDisplaySettings
   ) {
     self.layer = layer
     self.coreURL = coreURL
     self.contentPath = contentPath
+    self.entryID = entryID
     self.displayRefresh = displayRefresh
     self.displaySettings = displaySettings
     super.init()
@@ -110,7 +116,7 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     do {
       let snapshot = try session.serialize()
       try stateStore.save(
-        snapshot, coreName: saveIdentity.core, contentName: saveIdentity.content,
+        snapshot, entryID: saveIdentity,
         slot: slot.intValue)
       NSLog("state saved to slot %d (%d bytes)", slot.intValue, snapshot.count)
     } catch {
@@ -122,7 +128,7 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     guard let saveIdentity, let session else { return }
     guard
       let bytes = stateStore.load(
-        coreName: saveIdentity.core, contentName: saveIdentity.content, slot: slot.intValue)
+        entryID: saveIdentity, slot: slot.intValue)
     else {
       NSLog("state slot %d is empty", slot.intValue)
       return
@@ -140,7 +146,7 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
       snapshot != lastFlushedSaveRAM
     else { return }
     do {
-      try saveStore.save(snapshot, coreName: saveIdentity.core, contentName: saveIdentity.content)
+      try saveStore.save(snapshot, entryID: saveIdentity)
       lastFlushedSaveRAM = snapshot
     } catch {
       NSLog("save RAM flush failed: \(error)")
@@ -180,13 +186,9 @@ final class CoreDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     }
     presenter = MetalPresenter()
 
-    if let contentPath {
-      let identity = (
-        core: coreURL.deletingPathExtension().lastPathComponent,
-        content: URL(fileURLWithPath: contentPath).deletingPathExtension().lastPathComponent
-      )
-      saveIdentity = identity
-      if let existing = saveStore.load(coreName: identity.core, contentName: identity.content),
+    if let entryID {
+      saveIdentity = entryID
+      if let existing = saveStore.load(entryID: entryID),
         session?.restoreSaveRAM(existing) == true
       {
         lastFlushedSaveRAM = existing

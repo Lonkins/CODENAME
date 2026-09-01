@@ -27,3 +27,31 @@ Model, store, and bookmark machinery live in `CODENAMEKit` (CI-tested); only Swi
 ## Ceiling
 
 Full-file rewrite + whole-library-in-memory holds to roughly 10k entries. The upgrade trigger is metadata/cover art or search (Phase 3+); migration is a one-time import from the same Codable types.
+
+## Amendment (2026-09-01): the keying, as built
+
+The per-entry convention above was specified and then not implemented: both
+stores keyed on the core's filename plus the content's, so any two library
+entries whose files shared a basename shared one battery save and one set of
+slots — each silently restoring the other's — while renaming a ROM orphaned
+its saves and deleting an entry could never clean them up, because nothing on
+disk carried the id to find them by.
+
+It is keyed on `entry.id` now, with everything derived from an entry under
+`SaveStates/<entry.id>/` (`save.srm` beside `slot<N>.state`). `Saves/` remains
+what a core is handed as its own save directory; it is no longer ours.
+
+Two things the original decision did not account for, both now settled:
+
+- **Moves.** Scanning matched entries by relative path alone, so dragging a
+  game into a subfolder minted a new id — which under id-keyed saves would
+  strand them. A rescan now adopts an entry whose exact path is gone when a
+  same-named file of the same core appears and the match is unambiguous on
+  both sides; two same-named files departing at once adopt nothing, because
+  guessing would hand one game another's saves.
+- **Existing saves.** A one-time migration copies from the old layout into
+  the new one, leaves the old files untouched, and never overwrites a newer
+  save. Where several entries collided on one old key, each gets a copy: the
+  disk does not record whose save it was, and picking a winner would be a
+  silent choice about someone's progress.
+

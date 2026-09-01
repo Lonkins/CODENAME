@@ -111,9 +111,12 @@ public final class LibraryModel {
   }
 
   /// Upserts by (coreID, path) and stamps lastPlayedAt (injectable for tests).
+  /// Returns the entry that now represents this play — its id is what save
+  /// data is keyed on (ADR 0004), so every start path needs it back.
+  @discardableResult
   public func recordPlay(
     path: String, displayName: String, coreID: String, bookmark: Data?, at date: Date = Date()
-  ) {
+  ) -> GameEntry {
     if let index = library.entries.firstIndex(where: {
       $0.coreID == coreID && $0.relativePath == path
     }) {
@@ -121,13 +124,15 @@ public final class LibraryModel {
       if let bookmark {
         library.entries[index].bookmark = bookmark
       }
-    } else {
-      library.entries.append(
-        GameEntry(
-          id: UUID(), sourceID: nil, relativePath: path, bookmark: bookmark,
-          displayName: displayName, coreID: coreID, addedAt: date, lastPlayedAt: date))
+      persist()
+      return library.entries[index]
     }
+    let entry = GameEntry(
+      id: UUID(), sourceID: nil, relativePath: path, bookmark: bookmark,
+      displayName: displayName, coreID: coreID, addedAt: date, lastPlayedAt: date)
+    library.entries.append(entry)
     persist()
+    return entry
   }
 
   @discardableResult

@@ -8,7 +8,13 @@ public enum AppPaths {
   }
 
   public static var system: URL { base.appendingPathComponent("System", isDirectory: true) }
+  /// Handed to cores as their save directory; ours live in `saveStates`.
   public static var saves: URL { base.appendingPathComponent("Saves", isDirectory: true) }
+  /// One directory per library entry, holding its battery save and slots
+  /// (ADR 0004).
+  public static var saveStates: URL {
+    base.appendingPathComponent("SaveStates", isDirectory: true)
+  }
   public static var mappings: URL { base.appendingPathComponent("Mappings", isDirectory: true) }
   public static var options: URL { base.appendingPathComponent("Options", isDirectory: true) }
 
