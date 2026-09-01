@@ -74,6 +74,32 @@ struct XPCSessionParityTests {
     return (digest, audio.count)
   }
 
+  @Test func contentCrossesAsBytesWhenTheHelperCannotReadTheFile() async throws {
+    // What a sandboxed helper will rely on: the app holds the user's grant,
+    // reads the cartridge itself, and sends the bytes. The path is a label
+    // for cores that peek at it — here it points at nothing.
+    let host = LoopbackCoreHost()
+    let maybeProxy = host.proxy(errorHandler: { _ in })
+    let proxy = try #require(maybeProxy)
+    let missing = FileManager.default.temporaryDirectory
+      .appendingPathComponent("never-written-\(UUID().uuidString).bin").path
+
+    let opened: Bool = await withCheckedContinuation { continuation in
+      proxy.openSession(
+        corePath: coreURL.path, contentPath: missing,
+        contentBytes: Data(repeating: 0xAB, count: 2048),
+        systemDirectory: FileManager.default.temporaryDirectory.path,
+        saveDirectory: FileManager.default.temporaryDirectory.path,
+        options: Data()
+      ) { ok, _, _, _, _, _, _, _ in continuation.resume(returning: ok) }
+    }
+    #expect(opened)
+
+    await withCheckedContinuation { continuation in
+      proxy.closeSession { continuation.resume() }
+    }
+  }
+
   @Test func helperSessionMatchesInProcessHashes() async throws {
     let frames = 60
     let expected = try inProcessRun(frames: frames)

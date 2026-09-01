@@ -149,4 +149,28 @@ struct CoreSessionTests {
     let second = try makeSession()
     second.shutdown()
   }
+
+  // MARK: - Content the host already holds in memory
+
+  @Test func loadsContentFromBytesWithoutReadingTheFile() throws {
+    // The sandboxed helper cannot open the user's content: the app holds
+    // that grant and sends the bytes. A path that does not exist proves
+    // the bytes are what got loaded.
+    let session = try makeSession()
+    defer { session.shutdown() }
+    let missing = FileManager.default.temporaryDirectory
+      .appendingPathComponent("never-written-\(UUID().uuidString).bin").path
+    try session.loadGame(path: missing, bytes: Data(repeating: 0xAB, count: 2048))
+    #expect(session.avInfo != nil)
+  }
+
+  @Test func stillReadsTheFileWhenNoBytesAreSupplied() throws {
+    let session = try makeSession()
+    defer { session.shutdown() }
+    let missing = FileManager.default.temporaryDirectory
+      .appendingPathComponent("never-written-\(UUID().uuidString).bin").path
+    #expect(throws: CoreSession.SessionError.gameRejected) {
+      try session.loadGame(path: missing)
+    }
+  }
 }
