@@ -100,4 +100,48 @@ import Testing
         in: root.appendingPathComponent("received-empty", isDirectory: true))
     }
   }
+
+  // MARK: - A whole directory the receiver cannot read (BIOS images)
+
+  @Test func aDirectoryIsHandedOverFileByFile() throws {
+    let system = root.appendingPathComponent("System", isDirectory: true)
+    try FileManager.default.createDirectory(at: system, withIntermediateDirectories: true)
+    try Data("EU".utf8).write(to: system.appendingPathComponent("scph5502.bin"))
+    try Data("US".utf8).write(to: system.appendingPathComponent("scph5501.bin"))
+    try FileManager.default.createDirectory(
+      at: system.appendingPathComponent("nested", isDirectory: true),
+      withIntermediateDirectories: true)
+
+    let handoff = try DiscStaging.prepareDirectory(at: system)
+    // Sorted so the descriptor order is deterministic, directories skipped.
+    #expect(handoff.payload.referencedNames == ["scph5501.bin", "scph5502.bin"])
+    #expect(handoff.payload.name.isEmpty)
+    #expect(handoff.files.map(\.lastPathComponent) == handoff.payload.referencedNames)
+  }
+
+  @Test func stagingADirectoryYieldsTheDirectoryItself() throws {
+    let system = root.appendingPathComponent("System", isDirectory: true)
+    try FileManager.default.createDirectory(at: system, withIntermediateDirectories: true)
+    try Data("BIOSBYTES".utf8).write(to: system.appendingPathComponent("scph5501.bin"))
+
+    let handoff = try DiscStaging.prepareDirectory(at: system)
+    let handle = try FileHandle(forReadingFrom: handoff.files[0])
+    defer { try? handle.close() }
+    let staging = root.appendingPathComponent("received-system", isDirectory: true)
+    let staged = try DiscStaging.materialize(
+      handoff.payload, descriptors: [handle.fileDescriptor], in: staging)
+
+    #expect(staged == staging)
+    let readBack = try String(
+      contentsOf: staging.appendingPathComponent("scph5501.bin"), encoding: .utf8)
+    #expect(readBack == "BIOSBYTES")
+  }
+
+  @Test func anEmptyDirectoryHandsOverNothing() throws {
+    let empty = root.appendingPathComponent("Empty", isDirectory: true)
+    try FileManager.default.createDirectory(at: empty, withIntermediateDirectories: true)
+    let handoff = try DiscStaging.prepareDirectory(at: empty)
+    #expect(handoff.files.isEmpty)
+    #expect(handoff.payload.referencedNames.isEmpty)
+  }
 }
