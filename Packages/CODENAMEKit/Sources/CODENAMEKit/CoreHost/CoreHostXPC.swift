@@ -16,9 +16,13 @@ import IOSurface
   /// v3: `options` is a JSON `[String: String]` of stored option selections,
   /// seeded before the core declares anything — cores declare during
   /// retro_set_environment, which runs inside the session initializer.
+  /// v4: `contentBytes` carries cartridge content the app already read, so
+  /// the helper needs no access to the user's files; `contentPath` remains
+  /// the label cores peek at, and is the real path for `need_fullpath`
+  /// cores, which open it themselves.
   func openSession(
-    corePath: String, contentPath: String?, systemDirectory: String, saveDirectory: String,
-    options: Data,
+    corePath: String, contentPath: String?, contentBytes: Data,
+    systemDirectory: String, saveDirectory: String, options: Data,
     reply: @escaping @Sendable (Bool, Int, Int, Int, Int, Double, Double, Double) -> Void)
 
   /// v3: what the hosted core declared and what the helper resolved, as a
@@ -87,7 +91,7 @@ extension LibretroPixelFormat {
 }
 
 public enum CoreHostWire {
-  public static let version = 3
+  public static let version = 4
 
   public static func interface() -> NSXPCInterface {
     let interface = NSXPCInterface(with: CoreHostProtocol.self)
@@ -122,8 +126,8 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
   }
 
   public func openSession(
-    corePath: String, contentPath: String?, systemDirectory: String, saveDirectory: String,
-    options: Data,
+    corePath: String, contentPath: String?, contentBytes: Data,
+    systemDirectory: String, saveDirectory: String, options: Data,
     reply: @escaping @Sendable (Bool, Int, Int, Int, Int, Double, Double, Double) -> Void
   ) {
     coreQueue.async { [self] in
@@ -140,7 +144,7 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
       do {
         let session = try CoreSession(
           coreURL: coreURL, policy: policy, environment: environment)
-        try session.loadGame(path: contentPath)
+        try session.loadGame(path: contentPath, bytes: contentBytes.isEmpty ? nil : contentBytes)
         self.session = session
         let av = session.avInfo
         reply(

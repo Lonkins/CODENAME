@@ -12,6 +12,9 @@ final class HelperDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
   private let layer: CAMetalLayer
   private let coreURL: URL
   private let contentPath: String?
+  /// Cartridge content crosses as bytes: the app holds the user's grant,
+  /// the helper may not be able to open the file at all.
+  private let contentNeedsFullPath: Bool
   private let displayRefresh: Double
   private var connection: NSXPCConnection?
   private let session: HelperSession
@@ -44,8 +47,8 @@ final class HelperDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
   /// failures surface as a dead session (no frames, logged) per ADR 0001's
   /// fallible-session design.
   init?(
-    layer: CAMetalLayer, coreURL: URL, contentPath: String?, displayRefresh: Double,
-    displaySettings: LiveDisplaySettings
+    layer: CAMetalLayer, coreURL: URL, contentPath: String?, contentNeedsFullPath: Bool,
+    displayRefresh: Double, displaySettings: LiveDisplaySettings
   ) {
     let connection = NSXPCConnection(serviceName: "dev.CODENAME.CoreHost")
     connection.remoteObjectInterface = CoreHostWire.interface()
@@ -64,6 +67,7 @@ final class HelperDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     self.layer = layer
     self.coreURL = coreURL
     self.contentPath = contentPath
+    self.contentNeedsFullPath = contentNeedsFullPath
     self.displayRefresh = displayRefresh
     self.displaySettings = displaySettings
     super.init()
@@ -180,11 +184,19 @@ final class HelperDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     }
   }
 
+  /// Nil for cores that stream content themselves; otherwise the bytes the
+  /// core would have read, read here where the grant lives.
+  private func cartridgeBytes() -> Data? {
+    guard !contentNeedsFullPath, let contentPath else { return nil }
+    return FileManager.default.contents(atPath: contentPath)
+  }
+
   private func setUpOnLoopThread() {
     AppPaths.ensureExists()
     guard
       let av = session.open(
         corePath: coreURL.path, contentPath: contentPath,
+        contentBytes: cartridgeBytes(),
         systemDirectory: AppPaths.system.path, saveDirectory: AppPaths.saves.path,
         options: (try? CoreOptionsStore.load(from: AppPaths.optionsFile(forCore: coreURL)))
           ?? [:])

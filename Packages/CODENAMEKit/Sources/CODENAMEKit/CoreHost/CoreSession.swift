@@ -75,7 +75,10 @@ public final class CoreSession {
     shutdown()
   }
 
-  public func loadGame(path: String?) throws(SessionError) {
+  /// `bytes` is content the caller already holds — the app reads it and
+  /// sends it to the helper, which may have no access to the file at all.
+  /// Ignored for `need_fullpath` cores: those open the path themselves.
+  public func loadGame(path: String?, bytes: Data? = nil) throws(SessionError) {
     var loaded = false
     if let path {
       var info = retro_system_info()
@@ -91,7 +94,7 @@ public final class CoreSession {
       } else {
         // The core reads (and must copy) the data buffer, per the libretro
         // contract; the path rides along for cores that peek at it.
-        guard let contents = FileManager.default.contents(atPath: path) else {
+        guard let contents = bytes ?? FileManager.default.contents(atPath: path) else {
           throw .gameRejected
         }
         loaded = path.withCString { cPath in
