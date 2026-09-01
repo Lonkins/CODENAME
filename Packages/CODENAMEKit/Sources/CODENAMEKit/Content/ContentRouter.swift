@@ -19,6 +19,10 @@ public enum ContentRouter {
     public let coreURL: URL
     public let host: Host
     public let prerequisite: Prerequisite?
+    /// The core opens the content itself (disc images, playlists). Cartridge
+    /// content is read by the host instead — which is what lets a helper
+    /// with no file access play it.
+    public let needsFullPath: Bool
   }
 
   public enum Failure: Error, Equatable {
@@ -60,7 +64,10 @@ public enum ContentRouter {
   public static func route(forCore coreURL: URL, plugInsDirectory: URL) -> Route {
     Route(
       coreURL: coreURL, host: host(forCore: coreURL, plugInsDirectory: plugInsDirectory),
-      prerequisite: nil)
+      prerequisite: nil,
+      // Unknown for a core chosen directly: nothing has read its info yet,
+      // so take the path route, which works for either kind.
+      needsFullPath: true)
   }
 
   /// Content chosen by the user or replayed from the library.
@@ -81,7 +88,7 @@ public enum ContentRouter {
 
     return Route(
       coreURL: core.url, host: host(forCore: core.url, plugInsDirectory: plugInsDirectory),
-      prerequisite: prerequisite(for: core))
+      prerequisite: prerequisite(for: core), needsFullPath: core.needsFullPath)
   }
 
   private static func select(

@@ -68,15 +68,15 @@ public final class HelperSession: @unchecked Sendable {
   /// Opens the session and sizes the shared surface from MAX geometry
   /// (cores switch video modes mid-session). Nil on failure or timeout.
   public func open(
-    corePath: String, contentPath: String?, systemDirectory: String, saveDirectory: String,
-    options: [String: String] = [:]
+    corePath: String, contentPath: String?, contentBytes: Data? = nil,
+    systemDirectory: String, saveDirectory: String, options: [String: String] = [:]
   ) -> AVInfo? {
     guard isAlive else { return nil }
     let semaphore = DispatchSemaphore(value: 0)
     nonisolated(unsafe) var result: AVInfo?
     let encoded = (try? JSONEncoder().encode(options)) ?? Data()
     proxy.openSession(
-      corePath: corePath, contentPath: contentPath,
+      corePath: corePath, contentPath: contentPath, contentBytes: contentBytes ?? Data(),
       systemDirectory: systemDirectory, saveDirectory: saveDirectory, options: encoded
     ) { ok, baseW, baseH, maxW, maxH, aspect, fps, rate in
       if ok {

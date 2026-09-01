@@ -309,8 +309,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     if route.host == .helper || forceHelper {
       let helper = HelperDisplayLoop(
         layer: gameView.metalLayer, coreURL: coreURL,
-        contentPath: contentPath, displayRefresh: refresh,
-        displaySettings: LiveDisplaySettings(resolved))
+        contentPath: contentPath, contentNeedsFullPath: route.needsFullPath,
+        displayRefresh: refresh, displaySettings: LiveDisplaySettings(resolved))
       helper?.onSessionLost = { [weak self] message in
         MainActor.assumeIsolated {
           guard let self, self.displayLoop != nil else { return }

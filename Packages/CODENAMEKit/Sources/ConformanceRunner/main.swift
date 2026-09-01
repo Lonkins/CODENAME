@@ -103,7 +103,7 @@ func runViaHelper(
   let openSemaphore = DispatchSemaphore(value: 0)
   nonisolated(unsafe) var av: (ok: Bool, fps: Double, rate: Double) = (false, 0, 0)
   proxy.openSession(
-    corePath: coreURL.path, contentPath: content,
+    corePath: coreURL.path, contentPath: content, contentBytes: Data(),
     systemDirectory: systemDir,
     saveDirectory: FileManager.default.temporaryDirectory.path,
     options: Data()
