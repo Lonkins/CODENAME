@@ -144,6 +144,24 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
   /// Held so option state can be reported back; same queue confinement.
   private var environment: EnvironmentHandler?
 
+  /// The helper's own log. Its NSLog output reaches neither the app's
+  /// stderr nor the unified log, so without this nothing inside the
+  /// sandboxed service can be diagnosed. Names only, never content paths
+  /// (ADR 0001 log hygiene).
+  static func log(_ message: String) {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("CoreHost.log")
+    guard let line = "\(Date().timeIntervalSince1970) \(message)\n".data(using: .utf8) else {
+      return
+    }
+    if let handle = try? FileHandle(forWritingTo: url) {
+      defer { try? handle.close() }
+      _ = try? handle.seekToEnd()
+      try? handle.write(contentsOf: line)
+    } else {
+      try? line.write(to: url)
+    }
+  }
+
   /// The path to open a core from: the given one when this process can read
   /// it (cores bundled with the helper), otherwise a copy of the bytes the
   /// app sent, written inside this process's own container.
@@ -183,8 +201,10 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
       // A core the helper cannot reach arrives as bytes and is opened from
       // this process's own container instead.
       guard let coreURL = Self.resolveCore(path: corePath, bytes: coreBytes) else {
+        Self.log("openSession: no core (bytes \(coreBytes.count))")
         return reply(false, 0, 0, 0, 0, 0, 0, 0)
       }
+      Self.log("openSession: core \(coreURL.lastPathComponent), staged \(!coreBytes.isEmpty)")
       // Descriptors must outlive the session: the staged symlinks point at
       // them, and the core opens tracks lazily.
       self.contentHandles = contentHandles + systemHandles
@@ -227,9 +247,12 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
       self.environment = environment
       let policy = CoreTrustPolicy(allowedDirectory: coreURL.deletingLastPathComponent())
       do {
+        Self.log("openSession: constructing session")
         let session = try CoreSession(
           coreURL: coreURL, policy: policy, environment: environment)
+        Self.log("openSession: session constructed, loading game")
         try session.loadGame(path: loadPath, bytes: contentBytes.isEmpty ? nil : contentBytes)
+        Self.log("openSession: game loaded")
         self.session = session
         let av = session.avInfo
         reply(
@@ -237,7 +260,7 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
           av?.maxSize.width ?? 0, av?.maxSize.height ?? 0,
           av?.aspectRatio ?? 0, av?.framesPerSecond ?? 0, av?.audioSampleRate ?? 0)
       } catch {
-        NSLog("helper openSession failed: \(error) core=\(coreURL.lastPathComponent)")
+        Self.log("openSession failed: \(error) core=\(coreURL.lastPathComponent)")
         reply(false, 0, 0, 0, 0, 0, 0, 0)
       }
     }
