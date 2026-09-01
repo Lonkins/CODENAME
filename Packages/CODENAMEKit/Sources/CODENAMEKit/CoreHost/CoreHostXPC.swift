@@ -24,9 +24,15 @@ import IOSurface
   /// descriptors it names, in order — disc images are too large to send and
   /// `need_fullpath` cores open sibling tracks themselves, so the helper
   /// rebuilds the content in its own container from what the app opened.
+  /// v6: `system` is a JSON `DiscStaging.Payload` naming the BIOS images
+  /// `systemHandles` carries, staged the same way — cores reach them
+  /// through GET_SYSTEM_DIRECTORY, which otherwise points into the app's
+  /// container. `systemDirectory` remains the fallback while the helper can
+  /// still read it.
   func openSession(
     corePath: String, contentPath: String?, contentBytes: Data,
     disc: Data, contentHandles: [FileHandle],
+    system: Data, systemHandles: [FileHandle],
     systemDirectory: String, saveDirectory: String, options: Data,
     reply: @escaping @Sendable (Bool, Int, Int, Int, Int, Double, Double, Double) -> Void)
 
@@ -96,7 +102,7 @@ extension LibretroPixelFormat {
 }
 
 public enum CoreHostWire {
-  public static let version = 5
+  public static let version = 6
 
   public static func interface() -> NSXPCInterface {
     let interface = NSXPCInterface(with: CoreHostProtocol.self)
@@ -112,13 +118,12 @@ public enum CoreHostWire {
     // The descriptors for disc tracks travel as an array of file handles.
     let handleClasses =
       NSSet(array: [NSArray.self, FileHandle.self]) as? Set<AnyHashable> ?? []
-    interface.setClasses(
-      handleClasses,
-      for: #selector(
-        CoreHostProtocol.openSession(
-          corePath:contentPath:contentBytes:disc:contentHandles:systemDirectory:saveDirectory:
-          options:reply:)),
-      argumentIndex: 4, ofReply: false)
+    let openSelector = #selector(
+      CoreHostProtocol.openSession(
+        corePath:contentPath:contentBytes:disc:contentHandles:system:systemHandles:systemDirectory:
+        saveDirectory:options:reply:))
+    interface.setClasses(handleClasses, for: openSelector, argumentIndex: 4, ofReply: false)
+    interface.setClasses(handleClasses, for: openSelector, argumentIndex: 6, ofReply: false)
     return interface
   }
 }
@@ -153,6 +158,7 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
   public func openSession(
     corePath: String, contentPath: String?, contentBytes: Data,
     disc: Data, contentHandles: [FileHandle],
+    system: Data, systemHandles: [FileHandle],
     systemDirectory: String, saveDirectory: String, options: Data,
     reply: @escaping @Sendable (Bool, Int, Int, Int, Int, Double, Double, Double) -> Void
   ) {
@@ -160,7 +166,16 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
       let coreURL = URL(fileURLWithPath: corePath)
       // Descriptors must outlive the session: the staged symlinks point at
       // them, and the core opens tracks lazily.
-      self.contentHandles = contentHandles
+      self.contentHandles = contentHandles + systemHandles
+      var resolvedSystemDirectory = systemDirectory
+      if !systemHandles.isEmpty,
+        let payload = try? JSONDecoder().decode(DiscStaging.Payload.self, from: system),
+        let staged = try? DiscStaging.materialize(
+          payload, descriptors: systemHandles.map(\.fileDescriptor),
+          in: Self.stagingDirectory().appendingPathComponent("System", isDirectory: true))
+      {
+        resolvedSystemDirectory = staged.path
+      }
       var loadPath = contentPath
       if !disc.isEmpty {
         guard let payload = try? JSONDecoder().decode(DiscStaging.Payload.self, from: disc),
@@ -173,7 +188,7 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
         loadPath = staged.path
       }
       let environment = EnvironmentHandler(
-        systemDirectory: URL(fileURLWithPath: systemDirectory),
+        systemDirectory: URL(fileURLWithPath: resolvedSystemDirectory),
         saveDirectory: URL(fileURLWithPath: saveDirectory),
         jitCapable: true)
       // Seeded before the session exists, for the same reason as in-process.

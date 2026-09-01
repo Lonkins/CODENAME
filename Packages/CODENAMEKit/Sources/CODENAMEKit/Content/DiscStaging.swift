@@ -26,6 +26,10 @@ public enum DiscStaging {
     public let files: [URL]
   }
 
+  /// Enough for every BIOS set a core asks for, far below any descriptor
+  /// limit worth worrying about.
+  public static let maxStagedFiles = 64
+
   public enum Failure: Error, Equatable {
     case unreadableContent(String)
     case missingTrack(String)
@@ -56,8 +60,29 @@ public enum DiscStaging {
       payload: Payload(name: name, cueText: cueText, referencedNames: names), files: files)
   }
 
-  /// Receiver side: rebuild the content in `directory` from the descriptors,
-  /// returning the path to hand the core.
+  /// Sender side for a whole directory the receiver cannot read — BIOS
+  /// images reach cores through `GET_SYSTEM_DIRECTORY`, which points into
+  /// the app's container. Regular files only, sorted so the descriptor
+  /// order is deterministic, and bounded: a core needs a handful of BIOS
+  /// images, not an unbounded descriptor table.
+  public static func prepareDirectory(at url: URL) throws(Failure) -> Handoff {
+    let listing =
+      (try? FileManager.default.contentsOfDirectory(
+        at: url, includingPropertiesForKeys: [.isRegularFileKey])) ?? []
+    let files =
+      listing
+      .filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
+      .sorted { $0.lastPathComponent < $1.lastPathComponent }
+      .prefix(maxStagedFiles)
+    return Handoff(
+      payload: Payload(
+        name: "", cueText: nil, referencedNames: files.map(\.lastPathComponent)),
+      files: Array(files))
+  }
+
+  /// Receiver side: rebuild the content in `directory` from the descriptors.
+  /// Returns the path to hand the core — the staged file, or the directory
+  /// itself when the payload names no single one.
   public static func materialize(
     _ payload: Payload, descriptors: [Int32], in directory: URL
   ) throws(Failure) -> URL {
@@ -79,6 +104,6 @@ public enum DiscStaging {
     } catch {
       throw .unreadableContent(payload.name)
     }
-    return directory.appendingPathComponent(payload.name)
+    return payload.name.isEmpty ? directory : directory.appendingPathComponent(payload.name)
   }
 }

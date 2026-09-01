@@ -105,6 +105,7 @@ func runViaHelper(
   proxy.openSession(
     corePath: coreURL.path, contentPath: content, contentBytes: Data(),
     disc: Data(), contentHandles: [],
+    system: Data(), systemHandles: [],
     systemDirectory: systemDir,
     saveDirectory: FileManager.default.temporaryDirectory.path,
     options: Data()
