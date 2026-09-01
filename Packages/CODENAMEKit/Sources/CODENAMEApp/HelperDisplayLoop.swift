@@ -210,12 +210,19 @@ final class HelperDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
   private func setUpOnLoopThread() {
     AppPaths.ensureExists()
     let disc = discHandoff()
-    contentHandles = disc?.handles ?? []
+    // BIOS images live in the app's container; the helper gets descriptors
+    // for them the same way it gets disc tracks.
+    let systemHandoff = try? DiscStaging.prepareDirectory(at: AppPaths.system)
+    let systemHandles =
+      systemHandoff?.files.compactMap { try? FileHandle(forReadingFrom: $0) } ?? []
+    contentHandles = (disc?.handles ?? []) + systemHandles
     guard
       let av = session.open(
         corePath: coreURL.path, contentPath: contentPath,
         contentBytes: cartridgeBytes(),
         disc: disc?.payload, contentHandles: disc?.handles ?? [],
+        system: systemHandles.isEmpty ? nil : systemHandoff?.payload,
+        systemHandles: systemHandles,
         systemDirectory: AppPaths.system.path, saveDirectory: AppPaths.saves.path,
         options: (try? CoreOptionsStore.load(from: AppPaths.optionsFile(forCore: coreURL)))
           ?? [:])
