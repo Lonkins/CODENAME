@@ -88,6 +88,7 @@ struct XPCSessionParityTests {
       proxy.openSession(
         corePath: coreURL.path, contentPath: missing,
         contentBytes: Data(repeating: 0xAB, count: 2048), disc: Data(), contentHandles: [],
+        system: Data(), systemHandles: [],
         systemDirectory: FileManager.default.temporaryDirectory.path,
         saveDirectory: FileManager.default.temporaryDirectory.path,
         options: Data()
