@@ -14,6 +14,15 @@ public struct LibrarySource: Codable, Identifiable, Equatable, Sendable {
   }
 }
 
+/// How an entry gets back to the file it names. Scanned entries carry no
+/// bookmark of their own (ADR 0004) — the source folder's grant covers
+/// them — so every path that opens content has to ask, and ask the same way.
+public enum ContentResolution: Equatable, Sendable {
+  case inSource(sourceID: UUID, relativePath: String)
+  case ownBookmark(Data)
+  case unresolvable
+}
+
 public struct GameEntry: Codable, Identifiable, Equatable, Sendable {
   public let id: UUID
   public var sourceID: UUID?
@@ -24,6 +33,18 @@ public struct GameEntry: Codable, Identifiable, Equatable, Sendable {
   public var addedAt: Date
   public var lastPlayedAt: Date?
   public var displayOverrides: DisplaySettings?
+
+  /// The source grant is preferred over a stored per-file bookmark: it
+  /// outlives one, and it covers the sibling files a disc image needs.
+  public static func resolution(for entry: GameEntry) -> ContentResolution {
+    if let sourceID = entry.sourceID {
+      return .inSource(sourceID: sourceID, relativePath: entry.relativePath)
+    }
+    if let bookmark = entry.bookmark {
+      return .ownBookmark(bookmark)
+    }
+    return .unresolvable
+  }
 
   public init(
     id: UUID, sourceID: UUID?, relativePath: String, bookmark: Data?, displayName: String,

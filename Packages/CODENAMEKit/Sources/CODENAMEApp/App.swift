@@ -227,22 +227,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
   @objc private func openRecentAction(_ sender: NSMenuItem) {
     guard let entry = sender.representedObject as? GameEntry else { return }
-    guard let bookmark = entry.bookmark,
-      let resolved = try? Bookmark.resolve(bookmark),
-      FileManager.default.fileExists(atPath: resolved.url.path)
-    else {
-      let alert = NSAlert()
-      alert.messageText = "“\(entry.displayName)” can’t be found"
-      alert.informativeText = "The file may have moved. Use File → Open… to locate it."
-      alert.runModal()
-      return
+    play(entry: entry)
+  }
+
+  /// Resolves an entry the way the kit says it resolves, and takes the
+  /// access grant with it: the caller must hold the scope for as long as
+  /// the session reads content.
+  private func locate(_ entry: GameEntry) -> (content: URL, grant: URL)? {
+    switch GameEntry.resolution(for: entry) {
+    case .inSource(let sourceID, let relativePath):
+      guard let source = libraryModel.library.sources.first(where: { $0.id == sourceID }),
+        let resolved = try? Bookmark.resolve(source.bookmark)
+      else { return nil }
+      return (resolved.url.appendingPathComponent(relativePath), resolved.url)
+    case .ownBookmark(let bookmark):
+      guard let resolved = try? Bookmark.resolve(bookmark),
+        FileManager.default.fileExists(atPath: resolved.url.path)
+      else { return nil }
+      if resolved.isStale, let fresh = try? Bookmark.create(for: resolved.url) {
+        libraryModel.recordPlay(
+          path: entry.relativePath, displayName: entry.displayName,
+          coreID: entry.coreID, bookmark: fresh)
+      }
+      return (resolved.url, resolved.url)
+    case .unresolvable:
+      return nil
     }
-    if resolved.isStale, let fresh = try? Bookmark.create(for: resolved.url) {
-      libraryModel.recordPlay(
-        path: entry.relativePath, displayName: entry.displayName,
-        coreID: entry.coreID, bookmark: fresh)
-    }
-    openContent(at: resolved.url)
   }
 
   private func rebuildRecentsMenu() {
@@ -529,26 +539,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     _ = access  // scan-scoped access
   }
 
+  /// The one way a library entry starts: from the grid, and from Open
+  /// Recent, which used to have its own answer and refused every scanned
+  /// game because of it.
   private func play(entry: GameEntry) {
-    if let sourceID = entry.sourceID {
-      guard let source = libraryModel.library.sources.first(where: { $0.id == sourceID }),
-        let resolved = try? Bookmark.resolve(source.bookmark)
-      else { return }
-      let contentURL = resolved.url.appendingPathComponent(entry.relativePath)
-      guard let route = routeOrAlert(contentURL: contentURL, preferredCoreID: entry.coreID)
-      else { return }
-      libraryModel.recordPlay(
-        path: entry.relativePath, displayName: entry.displayName,
-        coreID: route.coreURL.deletingPathExtension().lastPathComponent, bookmark: nil)
-      startGame(
-        route: route, contentPath: contentURL.path,
-        contentAccess: ScopedAccess(url: resolved.url),
-        displayOverrides: entry.displayOverrides)
-    } else {
-      let recentsStyle = NSMenuItem()
-      recentsStyle.representedObject = entry
-      openRecentAction(recentsStyle)
+    guard let located = locate(entry) else {
+      let alert = NSAlert()
+      alert.messageText = "“\(entry.displayName)” can’t be found"
+      alert.informativeText = "The file may have moved. Use File → Open… to locate it."
+      alert.runModal()
+      return
     }
+    guard let route = routeOrAlert(contentURL: located.content, preferredCoreID: entry.coreID)
+    else { return }
+    libraryModel.recordPlay(
+      path: entry.relativePath, displayName: entry.displayName,
+      coreID: route.coreURL.deletingPathExtension().lastPathComponent, bookmark: entry.bookmark)
+    startGame(
+      route: route, contentPath: located.content.path,
+      contentAccess: ScopedAccess(url: located.grant),
+      displayOverrides: entry.displayOverrides)
   }
 
   private var remapWindow: NSWindow?
