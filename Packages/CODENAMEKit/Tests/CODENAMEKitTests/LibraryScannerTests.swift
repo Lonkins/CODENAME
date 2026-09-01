@@ -190,10 +190,34 @@ import Testing
     #expect(Set(ids).count == 2)
   }
 
-  @Test func anAmbiguousMoveDoesNotStealAnIdentity() {
-    // Two files of the same name in different folders: if one disappears and
-    // another appears, there is no way to know which moved, so adopt nothing
-    // rather than hand one game another's saves.
+  @Test func anUnambiguousMoveIsAdoptedEvenWithASameNamedSibling() {
+    // usa/ stays put, eur/ disappears, jpn/ appears: only one candidate on
+    // each side, so this is a move and the entry should follow it.
+    let model = makeModel()
+    let source = model.addSource(bookmark: Data([1]), name: "Games")
+    model.applyScan(
+      sourceID: source.id,
+      games: [
+        ScannedGame(relativePath: "usa/Sonic.md", displayName: "Sonic", ext: "md"),
+        ScannedGame(relativePath: "eur/Sonic.md", displayName: "Sonic", ext: "md"),
+      ],
+      coreIDFor: { _ in "genesis" })
+    let europe = model.library.entries.first { $0.relativePath == "eur/Sonic.md" }!.id
+
+    model.applyScan(
+      sourceID: source.id,
+      games: [
+        ScannedGame(relativePath: "usa/Sonic.md", displayName: "Sonic", ext: "md"),
+        ScannedGame(relativePath: "jpn/Sonic.md", displayName: "Sonic", ext: "md"),
+      ],
+      coreIDFor: { _ in "genesis" })
+
+    #expect(model.library.entries.first { $0.relativePath == "jpn/Sonic.md" }?.id == europe)
+  }
+
+  @Test func aTrulyAmbiguousMoveAdoptsNothing() {
+    // Both same-named files disappear and one appears: there is no way to
+    // know whose saves the survivor should inherit, so it inherits none.
     let model = makeModel()
     let source = model.addSource(bookmark: Data([1]), name: "Games")
     model.applyScan(
@@ -207,18 +231,12 @@ import Testing
 
     model.applyScan(
       sourceID: source.id,
-      games: [
-        ScannedGame(relativePath: "usa/Sonic.md", displayName: "Sonic", ext: "md"),
-        ScannedGame(relativePath: "jpn/Sonic.md", displayName: "Sonic", ext: "md"),
-      ],
+      games: [ScannedGame(relativePath: "jpn/Sonic.md", displayName: "Sonic", ext: "md")],
       coreIDFor: { _ in "genesis" })
 
-    let kept = model.library.entries.first { $0.relativePath == "usa/Sonic.md" }
-    let fresh = model.library.entries.first { $0.relativePath == "jpn/Sonic.md" }
-    #expect(kept != nil)
-    #expect(before.contains(kept!.id))
-    #expect(fresh != nil)
-    #expect(!before.contains(fresh!.id))
+    let survivor = model.library.entries.first { $0.relativePath == "jpn/Sonic.md" }
+    #expect(survivor != nil)
+    #expect(!before.contains(survivor!.id))
   }
 
   @Test func aMoveOnlyCountsWithinTheSameCore() {
