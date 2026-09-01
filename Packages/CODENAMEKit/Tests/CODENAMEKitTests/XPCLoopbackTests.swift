@@ -87,7 +87,7 @@ struct XPCSessionParityTests {
     let opened: Bool = await withCheckedContinuation { continuation in
       proxy.openSession(
         corePath: coreURL.path, contentPath: missing,
-        contentBytes: Data(repeating: 0xAB, count: 2048),
+        contentBytes: Data(repeating: 0xAB, count: 2048), disc: Data(), contentHandles: [],
         systemDirectory: FileManager.default.temporaryDirectory.path,
         saveDirectory: FileManager.default.temporaryDirectory.path,
         options: Data()
@@ -111,6 +111,7 @@ struct XPCSessionParityTests {
     let opened: Bool = await withCheckedContinuation { continuation in
       proxy.openSession(
         corePath: coreURL.path, contentPath: nil, contentBytes: Data(),
+        disc: Data(), contentHandles: [],
         systemDirectory: FileManager.default.temporaryDirectory.path,
         saveDirectory: FileManager.default.temporaryDirectory.path,
         options: Data()
@@ -148,6 +149,7 @@ struct XPCSessionParityTests {
     let opened: Bool = await withCheckedContinuation { continuation in
       proxy.openSession(
         corePath: coreURL.path, contentPath: nil, contentBytes: Data(),
+        disc: Data(), contentHandles: [],
         systemDirectory: FileManager.default.temporaryDirectory.path,
         saveDirectory: FileManager.default.temporaryDirectory.path,
         options: Data()
@@ -195,6 +197,7 @@ struct XPCSessionParityTests {
     let opened: Bool = await withCheckedContinuation { continuation in
       proxy.openSession(
         corePath: coreURL.path, contentPath: nil, contentBytes: Data(),
+        disc: Data(), contentHandles: [],
         systemDirectory: FileManager.default.temporaryDirectory.path,
         saveDirectory: FileManager.default.temporaryDirectory.path,
         options: Data()
@@ -225,6 +228,7 @@ struct XPCSessionParityTests {
     let opened: Bool = await withCheckedContinuation { continuation in
       proxy.openSession(
         corePath: coreURL.path, contentPath: nil, contentBytes: Data(),
+        disc: Data(), contentHandles: [],
         systemDirectory: FileManager.default.temporaryDirectory.path,
         saveDirectory: FileManager.default.temporaryDirectory.path,
         options: Data()
@@ -266,6 +270,7 @@ struct XPCSessionParityTests {
     let opened: Bool = await withCheckedContinuation { continuation in
       proxy.openSession(
         corePath: coreURL.path, contentPath: nil, contentBytes: Data(),
+        disc: Data(), contentHandles: [],
         systemDirectory: FileManager.default.temporaryDirectory.path,
         saveDirectory: FileManager.default.temporaryDirectory.path,
         options: Data()

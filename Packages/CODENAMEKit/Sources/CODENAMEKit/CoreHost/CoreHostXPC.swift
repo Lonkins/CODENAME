@@ -20,8 +20,13 @@ import IOSurface
   /// the helper needs no access to the user's files; `contentPath` remains
   /// the label cores peek at, and is the real path for `need_fullpath`
   /// cores, which open it themselves.
+  /// v5: `disc` is a JSON `DiscStaging.Payload` and `contentHandles` are the
+  /// descriptors it names, in order — disc images are too large to send and
+  /// `need_fullpath` cores open sibling tracks themselves, so the helper
+  /// rebuilds the content in its own container from what the app opened.
   func openSession(
     corePath: String, contentPath: String?, contentBytes: Data,
+    disc: Data, contentHandles: [FileHandle],
     systemDirectory: String, saveDirectory: String, options: Data,
     reply: @escaping @Sendable (Bool, Int, Int, Int, Int, Double, Double, Double) -> Void)
 
@@ -91,7 +96,7 @@ extension LibretroPixelFormat {
 }
 
 public enum CoreHostWire {
-  public static let version = 4
+  public static let version = 5
 
   public static func interface() -> NSXPCInterface {
     let interface = NSXPCInterface(with: CoreHostProtocol.self)
@@ -104,6 +109,16 @@ public enum CoreHostWire {
       allowed,
       for: #selector(CoreHostProtocol.attachFrameSurface(_:reply:)),
       argumentIndex: 0, ofReply: false)
+    // The descriptors for disc tracks travel as an array of file handles.
+    let handleClasses =
+      NSSet(array: [NSArray.self, FileHandle.self]) as? Set<AnyHashable> ?? []
+    interface.setClasses(
+      handleClasses,
+      for: #selector(
+        CoreHostProtocol.openSession(
+          corePath:contentPath:contentBytes:disc:contentHandles:systemDirectory:saveDirectory:
+          options:reply:)),
+      argumentIndex: 4, ofReply: false)
     return interface
   }
 }
@@ -114,8 +129,18 @@ public enum CoreHostWire {
 public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Sendable {
   private let coreQueue = DispatchQueue(label: "CODENAME.CoreHost.core")
   private var session: CoreSession?
+  /// Held open for the session's lifetime — the staged content is symlinks
+  /// to these descriptors, and closing them mid-session breaks the disc.
+  private var contentHandles: [FileHandle] = []
   /// Held so option state can be reported back; same queue confinement.
   private var environment: EnvironmentHandler?
+
+  /// Inside the helper's own temporary directory, which is inside its
+  /// container once the service is sandboxed.
+  static func stagingDirectory() -> URL {
+    FileManager.default.temporaryDirectory
+      .appendingPathComponent("CODENAME-content", isDirectory: true)
+  }
 
   public func handshake(version: Int, reply: @escaping @Sendable (Int) -> Void) {
     reply(CoreHostWire.version)
@@ -127,11 +152,26 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
 
   public func openSession(
     corePath: String, contentPath: String?, contentBytes: Data,
+    disc: Data, contentHandles: [FileHandle],
     systemDirectory: String, saveDirectory: String, options: Data,
     reply: @escaping @Sendable (Bool, Int, Int, Int, Int, Double, Double, Double) -> Void
   ) {
     coreQueue.async { [self] in
       let coreURL = URL(fileURLWithPath: corePath)
+      // Descriptors must outlive the session: the staged symlinks point at
+      // them, and the core opens tracks lazily.
+      self.contentHandles = contentHandles
+      var loadPath = contentPath
+      if !disc.isEmpty {
+        guard let payload = try? JSONDecoder().decode(DiscStaging.Payload.self, from: disc),
+          let staged = try? DiscStaging.materialize(
+            payload, descriptors: contentHandles.map(\.fileDescriptor),
+            in: Self.stagingDirectory())
+        else {
+          return reply(false, 0, 0, 0, 0, 0, 0, 0)
+        }
+        loadPath = staged.path
+      }
       let environment = EnvironmentHandler(
         systemDirectory: URL(fileURLWithPath: systemDirectory),
         saveDirectory: URL(fileURLWithPath: saveDirectory),
@@ -144,7 +184,7 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
       do {
         let session = try CoreSession(
           coreURL: coreURL, policy: policy, environment: environment)
-        try session.loadGame(path: contentPath, bytes: contentBytes.isEmpty ? nil : contentBytes)
+        try session.loadGame(path: loadPath, bytes: contentBytes.isEmpty ? nil : contentBytes)
         self.session = session
         let av = session.avInfo
         reply(
@@ -191,6 +231,7 @@ public final class CoreHostService: NSObject, CoreHostProtocol, @unchecked Senda
       session?.shutdown()
       session = nil
       frameSurface = nil
+      contentHandles = []
       reply()
     }
   }

@@ -69,6 +69,7 @@ public final class HelperSession: @unchecked Sendable {
   /// (cores switch video modes mid-session). Nil on failure or timeout.
   public func open(
     corePath: String, contentPath: String?, contentBytes: Data? = nil,
+    disc: DiscStaging.Payload? = nil, contentHandles: [FileHandle] = [],
     systemDirectory: String, saveDirectory: String, options: [String: String] = [:]
   ) -> AVInfo? {
     guard isAlive else { return nil }
@@ -77,6 +78,8 @@ public final class HelperSession: @unchecked Sendable {
     let encoded = (try? JSONEncoder().encode(options)) ?? Data()
     proxy.openSession(
       corePath: corePath, contentPath: contentPath, contentBytes: contentBytes ?? Data(),
+      disc: disc.flatMap { try? JSONEncoder().encode($0) } ?? Data(),
+      contentHandles: contentHandles,
       systemDirectory: systemDirectory, saveDirectory: saveDirectory, options: encoded
     ) { ok, baseW, baseH, maxW, maxH, aspect, fps, rate in
       if ok {
