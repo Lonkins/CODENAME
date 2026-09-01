@@ -136,4 +136,105 @@ import Testing
       coreIDFor: { _ in nil })
     #expect(model.library.entries.isEmpty)
   }
+
+  // MARK: - Identity across moves (what saves will be keyed on)
+
+  @Test func movingAFileKeepsItsEntryIdentity() {
+    // Saves are about to be keyed on the entry id, so a file the user drags
+    // into a subfolder must keep the same entry rather than becoming a new
+    // one with a fresh id and no history.
+    let model = makeModel()
+    let source = model.addSource(bookmark: Data([1]), name: "Games")
+    model.applyScan(
+      sourceID: source.id,
+      games: [ScannedGame(relativePath: "Sonic.md", displayName: "Sonic", ext: "md")],
+      coreIDFor: { _ in "genesis" })
+    let before = model.library.entries[0]
+    model.recordPlay(
+      path: "Sonic.md", displayName: "Sonic", coreID: "genesis", bookmark: nil,
+      at: Date(timeIntervalSince1970: 99))
+
+    model.applyScan(
+      sourceID: source.id,
+      games: [ScannedGame(relativePath: "genesis/Sonic.md", displayName: "Sonic", ext: "md")],
+      coreIDFor: { _ in "genesis" })
+
+    #expect(model.library.entries.count == 1)
+    let after = model.library.entries[0]
+    #expect(after.id == before.id)
+    #expect(after.relativePath == "genesis/Sonic.md")
+    #expect(after.lastPlayedAt == Date(timeIntervalSince1970: 99))
+    #expect(after.addedAt == before.addedAt)
+  }
+
+  @Test func aGenuinelyNewFileGetsANewIdentity() {
+    let model = makeModel()
+    let source = model.addSource(bookmark: Data([1]), name: "Games")
+    model.applyScan(
+      sourceID: source.id,
+      games: [ScannedGame(relativePath: "Sonic.md", displayName: "Sonic", ext: "md")],
+      coreIDFor: { _ in "genesis" })
+    let before = model.library.entries[0].id
+
+    model.applyScan(
+      sourceID: source.id,
+      games: [
+        ScannedGame(relativePath: "Sonic.md", displayName: "Sonic", ext: "md"),
+        ScannedGame(relativePath: "Streets.md", displayName: "Streets", ext: "md"),
+      ],
+      coreIDFor: { _ in "genesis" })
+
+    let ids = model.library.entries.map(\.id)
+    #expect(ids.count == 2)
+    #expect(ids.contains(before))
+    #expect(Set(ids).count == 2)
+  }
+
+  @Test func anAmbiguousMoveDoesNotStealAnIdentity() {
+    // Two files of the same name in different folders: if one disappears and
+    // another appears, there is no way to know which moved, so adopt nothing
+    // rather than hand one game another's saves.
+    let model = makeModel()
+    let source = model.addSource(bookmark: Data([1]), name: "Games")
+    model.applyScan(
+      sourceID: source.id,
+      games: [
+        ScannedGame(relativePath: "usa/Sonic.md", displayName: "Sonic", ext: "md"),
+        ScannedGame(relativePath: "eur/Sonic.md", displayName: "Sonic", ext: "md"),
+      ],
+      coreIDFor: { _ in "genesis" })
+    let before = Set(model.library.entries.map(\.id))
+
+    model.applyScan(
+      sourceID: source.id,
+      games: [
+        ScannedGame(relativePath: "usa/Sonic.md", displayName: "Sonic", ext: "md"),
+        ScannedGame(relativePath: "jpn/Sonic.md", displayName: "Sonic", ext: "md"),
+      ],
+      coreIDFor: { _ in "genesis" })
+
+    let kept = model.library.entries.first { $0.relativePath == "usa/Sonic.md" }
+    let fresh = model.library.entries.first { $0.relativePath == "jpn/Sonic.md" }
+    #expect(kept != nil)
+    #expect(before.contains(kept!.id))
+    #expect(fresh != nil)
+    #expect(!before.contains(fresh!.id))
+  }
+
+  @Test func aMoveOnlyCountsWithinTheSameCore() {
+    let model = makeModel()
+    let source = model.addSource(bookmark: Data([1]), name: "Games")
+    model.applyScan(
+      sourceID: source.id,
+      games: [ScannedGame(relativePath: "Sonic.md", displayName: "Sonic", ext: "md")],
+      coreIDFor: { _ in "genesis" })
+    let before = model.library.entries[0].id
+
+    // Same base name, different extension and core: a different game.
+    model.applyScan(
+      sourceID: source.id,
+      games: [ScannedGame(relativePath: "roms/Sonic.sfc", displayName: "Sonic", ext: "sfc")],
+      coreIDFor: { _ in "snes9x" })
+    #expect(model.library.entries[0].id != before)
+  }
 }
