@@ -12,6 +12,8 @@ final class HelperDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
   private let layer: CAMetalLayer
   private let coreURL: URL
   private let contentPath: String?
+  /// Which library entry this session's saves belong to (ADR 0004).
+  private let entryID: UUID?
   /// Cartridge content crosses as bytes: the app holds the user's grant,
   /// the helper may not be able to open the file at all.
   private let contentNeedsFullPath: Bool
@@ -33,7 +35,10 @@ final class HelperDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
   private var coreThreadShouldRun = true
   private let saveStore = SaveRAMStore()
   private let stateStore = SaveStateStore()
-  private var saveIdentity: (core: String, content: String)?
+  /// The library entry this session belongs to; nil for sessions with
+  /// no entry (a user-supplied core picking its own content), which
+  /// simply persist nothing.
+  private var saveIdentity: UUID?
   private var lastFlushedSaveRAM: Data?
   private var framesSinceFlush = 0
   private var reportedSessionLost = false
@@ -51,7 +56,7 @@ final class HelperDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
   /// fallible-session design.
   init?(
     layer: CAMetalLayer, coreURL: URL, contentPath: String?, contentNeedsFullPath: Bool,
-    displayRefresh: Double, displaySettings: LiveDisplaySettings
+    entryID: UUID?, displayRefresh: Double, displaySettings: LiveDisplaySettings
   ) {
     let connection = NSXPCConnection(serviceName: "dev.CODENAME.CoreHost")
     connection.remoteObjectInterface = CoreHostWire.interface()
@@ -70,6 +75,7 @@ final class HelperDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     self.layer = layer
     self.coreURL = coreURL
     self.contentPath = contentPath
+    self.entryID = entryID
     self.contentNeedsFullPath = contentNeedsFullPath
     self.displayRefresh = displayRefresh
     self.displaySettings = displaySettings
@@ -153,7 +159,7 @@ final class HelperDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     guard let saveIdentity, let snapshot = session.serializeState() else { return }
     do {
       try stateStore.save(
-        [UInt8](snapshot), coreName: saveIdentity.core, contentName: saveIdentity.content,
+        [UInt8](snapshot), entryID: saveIdentity,
         slot: slot.intValue)
       NSLog("helper state saved to slot %d (%d bytes)", slot.intValue, snapshot.count)
     } catch {
@@ -164,7 +170,7 @@ final class HelperDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
   @objc private func performLoadState(_ slot: NSNumber) {
     guard let saveIdentity,
       let bytes = stateStore.load(
-        coreName: saveIdentity.core, contentName: saveIdentity.content, slot: slot.intValue)
+        entryID: saveIdentity, slot: slot.intValue)
     else {
       NSLog("helper state slot %d is empty", slot.intValue)
       return
@@ -182,7 +188,7 @@ final class HelperDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     else { return }
     do {
       try saveStore.save(
-        [UInt8](snapshot), coreName: saveIdentity.core, contentName: saveIdentity.content)
+        [UInt8](snapshot), entryID: saveIdentity)
       lastFlushedSaveRAM = snapshot
     } catch {
       NSLog("helper save RAM flush failed: \(error)")
@@ -244,13 +250,9 @@ final class HelperDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     presenter = MetalPresenter()
     if av.aspectRatio > 0 { aspectRatio = av.aspectRatio }
 
-    if let contentPath {
-      let identity = (
-        core: coreURL.deletingPathExtension().lastPathComponent,
-        content: URL(fileURLWithPath: contentPath).deletingPathExtension().lastPathComponent
-      )
-      saveIdentity = identity
-      if let existing = saveStore.load(coreName: identity.core, contentName: identity.content),
+    if let entryID {
+      saveIdentity = entryID
+      if let existing = saveStore.load(entryID: entryID),
         session.restoreSaveRAM(Data(existing))
       {
         lastFlushedSaveRAM = Data(existing)

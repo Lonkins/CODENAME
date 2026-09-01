@@ -36,6 +36,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.mainMenu = makeMainMenu()
+    // Saves written under the old filename-derived layout are carried into
+    // the per-entry one (ADR 0004). Copies, never moves, and never twice.
+    AppPaths.ensureExists()
+    let migrated = SaveMigration.run(entries: libraryModel.library.entries)
+    if migrated.migratedEntries > 0 {
+      NSLog(
+        "migrated saves for %d librar%@", migrated.migratedEntries,
+        migrated.migratedEntries == 1 ? "y entry" : "y entries")
+    }
     showLibraryWindow()
     NSApp.activate()
     rescanAllSources()
@@ -135,12 +144,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
   private func openContent(at url: URL) {
     guard let route = routeOrAlert(contentURL: url) else { return }
-    libraryModel.recordPlay(
+    let recorded = libraryModel.recordPlay(
       path: url.path,
       displayName: url.deletingPathExtension().lastPathComponent,
       coreID: route.coreURL.deletingPathExtension().lastPathComponent,
       bookmark: try? Bookmark.create(for: url))
-    startGame(route: route, contentPath: url.path, contentAccess: ScopedAccess(url: url))
+    startGame(
+      route: route, contentPath: url.path, entryID: recorded.id,
+      contentAccess: ScopedAccess(url: url))
   }
 
   /// The single routing gate: which core plays this, where that core runs,
@@ -278,8 +289,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
   }
 
   func startGame(
-    route: ContentRouter.Route, contentPath: String?, contentAccess: ScopedAccess? = nil,
-    displayOverrides: DisplaySettings? = nil
+    route: ContentRouter.Route, contentPath: String?, entryID: UUID? = nil,
+    contentAccess: ScopedAccess? = nil, displayOverrides: DisplaySettings? = nil
   ) {
     let coreURL = route.coreURL
     stopGame()
@@ -320,7 +331,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
       let helper = HelperDisplayLoop(
         layer: gameView.metalLayer, coreURL: coreURL,
         contentPath: contentPath, contentNeedsFullPath: route.needsFullPath,
-        displayRefresh: refresh, displaySettings: LiveDisplaySettings(resolved))
+        entryID: entryID, displayRefresh: refresh,
+        displaySettings: LiveDisplaySettings(resolved))
       helper?.onSessionLost = { [weak self] message in
         MainActor.assumeIsolated {
           guard let self, self.displayLoop != nil else { return }
@@ -332,7 +344,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     } else {
       maybeLoop = CoreDisplayLoop(
         layer: gameView.metalLayer, coreURL: coreURL,
-        contentPath: contentPath, displayRefresh: refresh,
+        contentPath: contentPath, entryID: entryID, displayRefresh: refresh,
         displaySettings: LiveDisplaySettings(resolved))
     }
     guard let loop = maybeLoop else {
@@ -556,7 +568,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
       path: entry.relativePath, displayName: entry.displayName,
       coreID: route.coreURL.deletingPathExtension().lastPathComponent, bookmark: entry.bookmark)
     startGame(
-      route: route, contentPath: located.content.path,
+      route: route, contentPath: located.content.path, entryID: entry.id,
       contentAccess: ScopedAccess(url: located.grant),
       displayOverrides: entry.displayOverrides)
   }
