@@ -38,6 +38,15 @@ public enum ContentRouter {
     Bundle.main.builtInPlugInsURL ?? URL(fileURLWithPath: "/nonexistent")
   }
 
+  /// Where helper-hosted cores live: inside the XPC service's own bundle.
+  /// A sandboxed service can read its own bundle and not its parent's, and
+  /// the app process has no business loading these at all.
+  public static var helperPlugInsDirectory: URL {
+    Bundle.main.bundleURL
+      .appendingPathComponent(
+        "Contents/XPCServices/CoreHost.xpc/Contents/PlugIns", isDirectory: true)
+  }
+
   /// In-process hosting means exactly what the in-process trust policy
   /// allows: the core sits directly in the bundle's PlugIns directory.
   /// Anything else — a helper-only subdirectory, a user-supplied file

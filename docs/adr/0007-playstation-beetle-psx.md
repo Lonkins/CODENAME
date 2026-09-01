@@ -27,11 +27,14 @@ disc-content policies the frontend needs.
    Metal HW-render path exists.
 
 2. **Helper-only is mechanical, not conventional.** Helper-only cores are
-   bundled under `Contents/PlugIns/HelperOnly/`. `CoreTrustPolicy` now
-   enforces *direct* containment — a file in a subdirectory of the allowed
-   directory is refused — so the app process cannot `dlopen` a helper-only
-   core through any code path that goes through the policy (they all do).
-   The helper receives the subdirectory as its own allowed directory.
+   bundled inside the helper's own bundle,
+   `Contents/XPCServices/CoreHost.xpc/Contents/PlugIns/` — outside every
+   directory the app process is allowed to load from, and the only place a
+   sandboxed XPC service can read a core from (it can read its own bundle,
+   never its parent's). `CoreTrustPolicy` enforces *direct* containment —
+   a file in a subdirectory of the allowed directory is refused — so the
+   app process cannot `dlopen` a helper-only core through any code path
+   that goes through the policy (they all do).
    Keeping the GPL core out of the GPL-incompatible-adjacent process is
    also the strongest arm's-length aggregation argument: the core never
    shares an address space with the GPL-3.0 app.

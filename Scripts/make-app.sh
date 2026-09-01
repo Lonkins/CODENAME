@@ -41,21 +41,25 @@ fi
 if ls build/cores/*.dylib >/dev/null 2>&1; then
   cp build/cores/*.dylib "$APP/Contents/PlugIns/"
 fi
-# Helper-only cores (GPL, ADR 0007) go in a subdirectory the app-process
-# trust policy refuses by construction; only the helper may load them.
-if ls build/cores/helper-only/*.dylib >/dev/null 2>&1; then
-  mkdir -p "$APP/Contents/PlugIns/HelperOnly"
-  cp build/cores/helper-only/*.dylib "$APP/Contents/PlugIns/HelperOnly/"
-  # Sidecars are data, not code: inside PlugIns they would break the code
-  # seal (codesign treats PlugIns entries as code objects).
-  mkdir -p "$APP/Contents/Resources/HelperOnly"
-  cp build/cores/helper-only/*.info "$APP/Contents/Resources/HelperOnly/" 2>/dev/null || true
-fi
-
 # Bundled XPC core-host service (ADR 0006 step B).
 XPC_BUNDLE="$APP/Contents/XPCServices/CoreHost.xpc"
 mkdir -p "$XPC_BUNDLE/Contents/MacOS"
 cp "$BUILD_DIR/CoreHostXPC" "$XPC_BUNDLE/Contents/MacOS/CoreHost"
+
+# Helper-only cores (GPL, ADR 0007) live inside the helper's OWN bundle, not
+# the app's: a sandboxed XPC service can read its own bundle and nothing of
+# its parent's, so this is the layout the helper sandbox needs (measured —
+# a core in the app bundle fails to load once the service is sandboxed).
+# It also puts them outside every directory the app process may dlopen from.
+if ls build/cores/helper-only/*.dylib >/dev/null 2>&1; then
+  mkdir -p "$XPC_BUNDLE/Contents/PlugIns"
+  cp build/cores/helper-only/*.dylib "$XPC_BUNDLE/Contents/PlugIns/"
+  # Sidecars are data, not code, and are read by the app to build its
+  # catalog without ever loading these dylibs. Inside a PlugIns directory
+  # they would break the code seal.
+  mkdir -p "$APP/Contents/Resources/HelperOnly"
+  cp build/cores/helper-only/*.info "$APP/Contents/Resources/HelperOnly/" 2>/dev/null || true
+fi
 sed -e "s/__VERSION__/$VERSION/g" -e "s/__BUILD__/$BUILD/g" App/CoreHost-Info.plist \
   > "$XPC_BUNDLE/Contents/Info.plist"
 lipo -thin arm64 "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle" \
@@ -70,7 +74,7 @@ RUNTIME_OPTS=""
 if [ "$IDENTITY" != "-" ]; then RUNTIME_OPTS="--options runtime"; fi
 
 # Sign inside-out: plug-ins and Sparkle's nested services, the framework, then the app.
-for plugin in "$APP/Contents/PlugIns/"*.dylib "$APP/Contents/PlugIns/HelperOnly/"*.dylib; do
+for plugin in "$APP/Contents/PlugIns/"*.dylib "$XPC_BUNDLE/Contents/PlugIns/"*.dylib; do
   [ -e "$plugin" ] || continue  # unmatched glob under set -u
   codesign --force $RUNTIME_OPTS --sign "$IDENTITY" "$plugin"
 done

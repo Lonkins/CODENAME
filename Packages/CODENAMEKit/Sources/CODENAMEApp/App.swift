@@ -20,8 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
   private let recentsMenu = NSMenu(title: "Open Recent")
   private lazy var catalog = CoreCatalog(
     pluginsDirectory: ContentRouter.bundledPlugInsDirectory,
-    helperOnlyDirectory: Bundle.main.builtInPlugInsURL?
-      .appendingPathComponent("HelperOnly", isDirectory: true),
+    helperOnlyDirectory: ContentRouter.helperPlugInsDirectory,
     sidecarDirectory: Bundle.main.resourceURL?
       .appendingPathComponent("HelperOnly", isDirectory: true))
   private let updaterController = SPUStandardUpdaterController(
